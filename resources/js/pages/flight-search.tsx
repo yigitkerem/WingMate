@@ -1,4 +1,4 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import {
     ArrowRight,
     Baby,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import { dashboard } from '@/routes';
 
 type Airport = {
     id: number;
@@ -87,11 +88,56 @@ type PurchaseTarget = {
     fare: Fare;
 };
 
+type FullFareFeatureFilter =
+    | 'available'
+    | 'checked_bag'
+    | 'large_cabin_bag'
+    | 'free_seat_selection'
+    | 'free_change'
+    | 'free_refund';
+
 const inputClass =
     'h-12 w-full border border-zinc-300 bg-white px-3 text-left text-sm text-zinc-950 outline-none transition-colors focus:border-red-600';
 
 const controlClass =
     'h-12 border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-zinc-500 focus:border-red-600';
+
+const fullFareFeatureFilters: {
+    key: FullFareFeatureFilter;
+    label: string;
+    matches: (fare: Fare) => boolean;
+}[] = [
+    {
+        key: 'available',
+        label: 'Available seats',
+        matches: (fare) => fare.available,
+    },
+    {
+        key: 'checked_bag',
+        label: 'Checked bag',
+        matches: (fare) => (fare.checked_baggage_kg ?? 0) > 0,
+    },
+    {
+        key: 'large_cabin_bag',
+        label: '8 kg cabin',
+        matches: (fare) => (fare.cabin_baggage_kg ?? 0) >= 8,
+    },
+    {
+        key: 'free_seat_selection',
+        label: 'Free seat selection',
+        matches: (fare) => fare.seat_selection_free === true,
+    },
+    {
+        key: 'free_change',
+        label: 'Free changes',
+        matches: (fare) => fare.change_fee_usd === 0,
+    },
+    {
+        key: 'free_refund',
+        label: 'Free refunds',
+        matches: (fare) => fare.refund_fee_usd === 0,
+    },
+];
 
 function AirportBackground() {
     return (
@@ -145,192 +191,170 @@ export default function FlightSearch({
         );
     }
 
+    const bookingForm = (
+        <form
+            onSubmit={submit}
+            className="border border-zinc-300 bg-white p-4 shadow-[0_18px_55px_rgba(24,24,27,0.16)] sm:p-5"
+        >
+            <div className="mb-5 flex flex-col justify-between gap-4 border-b border-zinc-300 pb-4 sm:flex-row sm:items-end">
+                <div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-red-700">
+                        Book a flight
+                    </div>
+                    <h2 className="mt-1 text-2xl font-semibold tracking-normal">
+                        Find your fare
+                    </h2>
+                </div>
+            </div>
+            <div className="grid gap-4">
+                <div className="grid gap-4 lg:grid-cols-[1.3fr_1.3fr_1fr]">
+                    <SearchableAirport
+                        airports={airports}
+                        label="From"
+                        value={form.origin_airport_id}
+                        error={errors.origin_airport_id}
+                        isOpen={openPanel === 'origin'}
+                        onToggle={() =>
+                            setOpenPanel(openPanel === 'origin' ? null : 'origin')
+                        }
+                        onClose={() => setOpenPanel(null)}
+                        onChange={(id) => update('origin_airport_id', id)}
+                    />
+                    <SearchableAirport
+                        airports={airports}
+                        label="To"
+                        value={form.destination_airport_id}
+                        error={errors.destination_airport_id}
+                        isOpen={openPanel === 'destination'}
+                        onToggle={() =>
+                            setOpenPanel(
+                                openPanel === 'destination' ? null : 'destination',
+                            )
+                        }
+                        onClose={() => setOpenPanel(null)}
+                        onChange={(id) => update('destination_airport_id', id)}
+                    />
+                    <SegmentedControl
+                        label="Trip"
+                        value={form.trip_type}
+                        options={[
+                            ['one_way', 'One-way'],
+                            ['round_trip', 'Roundtrip'],
+                        ]}
+                        onChange={(value) =>
+                            update('trip_type', value as Filters['trip_type'])
+                        }
+                    />
+                </div>
+                <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
+                    <DatePicker
+                        label="Depart"
+                        value={form.depart_date}
+                        error={errors.depart_date}
+                        isOpen={openPanel === 'depart'}
+                        onToggle={() =>
+                            setOpenPanel(openPanel === 'depart' ? null : 'depart')
+                        }
+                        onClose={() => setOpenPanel(null)}
+                        onChange={(date) => update('depart_date', date)}
+                    />
+                    <DatePicker
+                        disabled={form.trip_type === 'one_way'}
+                        label="Return"
+                        value={form.return_date}
+                        error={errors.return_date}
+                        isOpen={openPanel === 'return'}
+                        onToggle={() =>
+                            setOpenPanel(openPanel === 'return' ? null : 'return')
+                        }
+                        onClose={() => setOpenPanel(null)}
+                        onChange={(date) => update('return_date', date)}
+                    />
+                    <PassengerPicker
+                        adults={form.adults}
+                        children={form.children}
+                        babies={form.babies}
+                        errors={errors}
+                        canUseFullSearch={canUseFullSearch}
+                        searchMode={form.search_mode}
+                        isOpen={openPanel === 'passengers'}
+                        onToggle={() =>
+                            setOpenPanel(
+                                openPanel === 'passengers' ? null : 'passengers',
+                            )
+                        }
+                        onChange={(key, value) => update(key, value)}
+                        onSearchModeChange={(value) => update('search_mode', value)}
+                    />
+                    <div className="flex items-end">
+                        <button
+                            type="submit"
+                            className="inline-flex h-12 w-full items-center justify-center gap-2 border border-red-700 bg-red-700 px-6 text-sm font-semibold text-white outline-none transition-colors hover:bg-red-800 focus:border-zinc-950 lg:w-auto"
+                        >
+                            <Search className="size-4" />
+                            Search flights
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    );
+
     return (
         <>
             <Head title="AeroVista Airlines Price Search" />
             <main className="relative min-h-screen overflow-hidden bg-zinc-100 font-sans text-zinc-950">
-                <AirportBackground />
+                {!results && <AirportBackground />}
                 <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
                     <AirlineHeader
                         customer={customer}
                         canUseAdmin={customer.isAdmin}
                     />
 
-                    <section className="grid min-h-[470px] items-end gap-6 py-8 lg:grid-cols-[0.9fr_1.35fr] lg:py-12">
-                        <div className="max-w-xl pb-2">
-                            <div className="inline-flex border border-red-800 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-normal text-red-700">
-                                Summer network now open
-                            </div>
-                            <h1 className="mt-5 text-5xl font-semibold tracking-normal text-zinc-950 sm:text-6xl">
-                                Fly Istanbul, Europe, and beyond.
-                            </h1>
-                            <p className="mt-4 max-w-lg text-base font-medium leading-7 text-zinc-700">
-                                Book direct with AeroVista Airlines for clear fares,
-                                practical baggage choices, and live seat availability.
-                            </p>
-                            <div className="mt-6 grid grid-cols-3 border border-zinc-300 bg-white/90">
-                                {[
-                                    ['86', 'Destinations'],
-                                    ['31', 'Countries'],
-                                    ['24h', 'Fare hold'],
-                                ].map(([value, label]) => (
-                                    <div
-                                        key={label}
-                                        className="border-r border-zinc-300 p-3 last:border-r-0"
-                                    >
-                                        <div className="text-2xl font-semibold text-zinc-950">
-                                            {value}
-                                        </div>
-                                        <div className="mt-1 text-xs font-semibold uppercase tracking-normal text-zinc-500">
-                                            {label}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <form
-                            onSubmit={submit}
-                            className="border border-zinc-300 bg-white p-4 shadow-[0_18px_55px_rgba(24,24,27,0.16)] sm:p-5"
-                        >
-                            <div className="mb-5 flex flex-col justify-between gap-4 border-b border-zinc-300 pb-4 sm:flex-row sm:items-end">
-                                <div>
-                                    <div className="text-xs font-semibold uppercase tracking-normal text-red-700">
-                                        Book a flight
-                                    </div>
-                                    <h2 className="mt-1 text-2xl font-semibold tracking-normal">
-                                        Find your fare
-                                    </h2>
+                    {results ? (
+                        <section className="py-4">{bookingForm}</section>
+                    ) : (
+                        <section className="grid min-h-[470px] items-end gap-6 py-8 lg:grid-cols-[0.9fr_1.35fr] lg:py-12">
+                            <div className="max-w-xl pb-2">
+                                <div className="inline-flex border border-red-800 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-normal text-red-700">
+                                    Summer network now open
                                 </div>
-                            </div>
-                            <div className="grid gap-4">
-                                <div className="grid gap-4 lg:grid-cols-[1.3fr_1.3fr_1fr]">
-                                    <SearchableAirport
-                                        airports={airports}
-                                        label="From"
-                                        value={form.origin_airport_id}
-                                        error={errors.origin_airport_id}
-                                        isOpen={openPanel === 'origin'}
-                                        onToggle={() =>
-                                            setOpenPanel(
-                                                openPanel === 'origin'
-                                                    ? null
-                                                    : 'origin',
-                                            )
-                                        }
-                                        onClose={() => setOpenPanel(null)}
-                                        onChange={(id) =>
-                                            update('origin_airport_id', id)
-                                        }
-                                    />
-                                    <SearchableAirport
-                                        airports={airports}
-                                        label="To"
-                                        value={form.destination_airport_id}
-                                        error={errors.destination_airport_id}
-                                        isOpen={openPanel === 'destination'}
-                                        onToggle={() =>
-                                            setOpenPanel(
-                                                openPanel === 'destination'
-                                                    ? null
-                                                    : 'destination',
-                                            )
-                                        }
-                                        onClose={() => setOpenPanel(null)}
-                                        onChange={(id) =>
-                                            update('destination_airport_id', id)
-                                        }
-                                    />
-                                    <SegmentedControl
-                                        label="Trip"
-                                        value={form.trip_type}
-                                        options={[
-                                            ['one_way', 'One-way'],
-                                            ['round_trip', 'Roundtrip'],
-                                        ]}
-                                        onChange={(value) =>
-                                            update(
-                                                'trip_type',
-                                                value as Filters['trip_type'],
-                                            )
-                                        }
-                                    />
-                                </div>
-                                <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
-                                    <DatePicker
-                                        label="Depart"
-                                        value={form.depart_date}
-                                        error={errors.depart_date}
-                                        isOpen={openPanel === 'depart'}
-                                        onToggle={() =>
-                                            setOpenPanel(
-                                                openPanel === 'depart'
-                                                    ? null
-                                                    : 'depart',
-                                            )
-                                        }
-                                        onClose={() => setOpenPanel(null)}
-                                        onChange={(date) =>
-                                            update('depart_date', date)
-                                        }
-                                    />
-                                    <DatePicker
-                                        disabled={form.trip_type === 'one_way'}
-                                        label="Return"
-                                        value={form.return_date}
-                                        error={errors.return_date}
-                                        isOpen={openPanel === 'return'}
-                                        onToggle={() =>
-                                            setOpenPanel(
-                                                openPanel === 'return'
-                                                    ? null
-                                                    : 'return',
-                                            )
-                                        }
-                                        onClose={() => setOpenPanel(null)}
-                                        onChange={(date) =>
-                                            update('return_date', date)
-                                        }
-                                    />
-                                    <PassengerPicker
-                                        adults={form.adults}
-                                        children={form.children}
-                                        babies={form.babies}
-                                        errors={errors}
-                                        canUseFullSearch={canUseFullSearch}
-                                        searchMode={form.search_mode}
-                                        isOpen={openPanel === 'passengers'}
-                                        onToggle={() =>
-                                            setOpenPanel(
-                                                openPanel === 'passengers'
-                                                    ? null
-                                                    : 'passengers',
-                                            )
-                                        }
-                                        onChange={(key, value) =>
-                                            update(key, value)
-                                        }
-                                        onSearchModeChange={(value) =>
-                                            update('search_mode', value)
-                                        }
-                                    />
-                                    <div className="flex items-end">
-                                        <button
-                                            type="submit"
-                                            className="inline-flex h-12 w-full items-center justify-center gap-2 border border-red-700 bg-red-700 px-6 text-sm font-semibold text-white outline-none transition-colors hover:bg-red-800 focus:border-zinc-950 lg:w-auto"
+                                <h1 className="mt-5 text-5xl font-semibold tracking-normal text-zinc-950 sm:text-6xl">
+                                    Fly Istanbul, Europe, and beyond.
+                                </h1>
+                                <p className="mt-4 max-w-lg text-base font-medium leading-7 text-zinc-700">
+                                    Book direct with AeroVista Airlines for clear
+                                    fares, practical baggage choices, and live seat
+                                    availability.
+                                </p>
+                                <div className="mt-6 grid grid-cols-3 border border-zinc-300 bg-white/90">
+                                    {[
+                                        ['86', 'Destinations'],
+                                        ['31', 'Countries'],
+                                        ['24h', 'Fare hold'],
+                                    ].map(([value, label]) => (
+                                        <div
+                                            key={label}
+                                            className="border-r border-zinc-300 p-3 last:border-r-0"
                                         >
-                                            <Search className="size-4" />
-                                            Search flights
-                                        </button>
-                                    </div>
+                                            <div className="text-2xl font-semibold text-zinc-950">
+                                                {value}
+                                            </div>
+                                            <div className="mt-1 text-xs font-semibold uppercase tracking-normal text-zinc-500">
+                                                {label}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
-                        </form>
-                    </section>
+
+                            {bookingForm}
+                        </section>
+                    )}
 
                     <QuickActions />
 
-                    <OfferCarousel />
+                    {!results && <OfferCarousel />}
 
                     <ResultsPanel
                         mode={canUseFullSearch ? form.search_mode : 'basic'}
@@ -406,6 +430,14 @@ function AirlineHeader({
                                 Log in
                             </a>
                         </>
+                    )}
+                    {customer.isAuthenticated && (
+                        <Link
+                            className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                            href={dashboard()}
+                        >
+                            Dashboard
+                        </Link>
                     )}
                     {canUseAdmin && (
                         <a
@@ -1139,97 +1171,186 @@ function FullFares({
     flight: FlightResult;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
+    const [selectedFeatureFilters, setSelectedFeatureFilters] = useState<
+        FullFareFeatureFilter[]
+    >([]);
+    const filteredFares = useMemo(
+        () =>
+            fares.filter((fare) =>
+                selectedFeatureFilters.every((filter) => {
+                    const option = fullFareFeatureFilters.find(
+                        (featureFilter) => featureFilter.key === filter,
+                    );
+
+                    return option ? option.matches(fare) : true;
+                }),
+            ),
+        [fares, selectedFeatureFilters],
+    );
+
+    function toggleFeatureFilter(filter: FullFareFeatureFilter): void {
+        setSelectedFeatureFilters((current) =>
+            current.includes(filter)
+                ? current.filter((currentFilter) => currentFilter !== filter)
+                : [...current, filter],
+        );
+    }
+
     return (
-        <div className="overflow-x-auto border border-zinc-200">
-            <table className="w-full min-w-[860px] border-collapse text-left text-sm">
-                <thead className="bg-zinc-100 text-xs uppercase tracking-normal text-zinc-600">
-                    <tr>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Class
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Letters
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Type
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Price
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Seats
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Bags / seats
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Change
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Refund
-                        </th>
-                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Buy
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {fares.map((fare) => (
-                        <tr
-                            key={fare.id}
-                            className={
-                                fare.available ? 'bg-white' : 'bg-zinc-50 text-zinc-500'
-                            }
+        <div className="border border-zinc-200">
+            <div className="border-b border-zinc-200 bg-zinc-50 p-3">
+                <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+                    <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
+                            Filter by feature
+                        </div>
+                        <div className="mt-1 text-sm text-zinc-600">
+                            Showing {filteredFares.length} of {fares.length} fares.
+                        </div>
+                    </div>
+                    {selectedFeatureFilters.length > 0 && (
+                        <button
+                            type="button"
+                            className="h-9 border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-950 outline-none hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                            onClick={() => setSelectedFeatureFilters([])}
                         >
-                            <td className="border-b border-zinc-200 px-3 py-3 font-medium">
-                                {fare.class}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3 font-semibold">
-                                {fare.class_letters}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3">
-                                {fareTypeLabel(fare.fare_type)}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3">
-                                ${fare.base_price_usd}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3">
-                                {fare.count_available}{' '}
-                                {fare.count_available! >= seatPassengers
-                                    ? 'available'
-                                    : 'not available'}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3">
-                                {fare.checked_baggage_kg} kg /{' '}
-                                {fare.cabin_baggage_kg} kg ·{' '}
-                                {seatSelectionLabel(fare.seat_selection_free)}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3">
-                                {feeLabel(
-                                    fare.change_fee_usd!,
-                                    fare.latest_change_hours,
-                                )}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3">
-                                {feeLabel(
-                                    fare.refund_fee_usd!,
-                                    fare.latest_refund_hours,
-                                )}
-                            </td>
-                            <td className="border-b border-zinc-200 px-3 py-3">
-                                <button
-                                    type="button"
-                                    disabled={!fare.available}
-                                    className="h-9 border border-red-700 bg-red-700 px-4 text-sm font-semibold text-white outline-none hover:bg-red-800 focus:border-zinc-950 disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-400"
-                                    onClick={() => onPurchase(flight, fare)}
-                                >
-                                    Buy
-                                </button>
-                            </td>
+                            Clear filters
+                        </button>
+                    )}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                    {fullFareFeatureFilters.map((filter) => {
+                        const isSelected = selectedFeatureFilters.includes(
+                            filter.key,
+                        );
+
+                        return (
+                            <label
+                                key={filter.key}
+                                className={`inline-flex h-9 cursor-pointer items-center gap-2 border px-3 text-sm font-semibold ${
+                                    isSelected
+                                        ? 'border-zinc-950 bg-zinc-950 text-white'
+                                        : 'border-zinc-300 bg-white text-zinc-950 hover:border-red-700 hover:text-red-700'
+                                }`}
+                            >
+                                <input
+                                    type="checkbox"
+                                    className="size-4 accent-red-700"
+                                    checked={isSelected}
+                                    onChange={() => toggleFeatureFilter(filter.key)}
+                                />
+                                {filter.label}
+                            </label>
+                        );
+                    })}
+                </div>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+                    <thead className="bg-zinc-100 text-xs uppercase tracking-normal text-zinc-600">
+                        <tr>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Class
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Letters
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Type
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Price
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Seats
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Bags / seats
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Change
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Refund
+                            </th>
+                            <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                                Buy
+                            </th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {filteredFares.length === 0 ? (
+                            <tr>
+                                <td
+                                    colSpan={9}
+                                    className="px-3 py-6 text-center text-sm font-medium text-zinc-600"
+                                >
+                                    No fares match the selected features.
+                                </td>
+                            </tr>
+                        ) : (
+                            filteredFares.map((fare) => (
+                                <tr
+                                    key={fare.id}
+                                    className={
+                                        fare.available
+                                            ? 'bg-white'
+                                            : 'bg-zinc-50 text-zinc-500'
+                                    }
+                                >
+                                    <td className="border-b border-zinc-200 px-3 py-3 font-medium">
+                                        {fare.class}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3 font-semibold">
+                                        {fare.class_letters}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3">
+                                        {fareTypeLabel(fare.fare_type)}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3">
+                                        ${fare.base_price_usd}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3">
+                                        {fare.count_available}{' '}
+                                        {fare.count_available! >= seatPassengers
+                                            ? 'available'
+                                            : 'not available'}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3">
+                                        {fare.checked_baggage_kg} kg /{' '}
+                                        {fare.cabin_baggage_kg} kg ·{' '}
+                                        {seatSelectionLabel(
+                                            fare.seat_selection_free,
+                                        )}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3">
+                                        {feeLabel(
+                                            fare.change_fee_usd!,
+                                            fare.latest_change_hours,
+                                        )}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3">
+                                        {feeLabel(
+                                            fare.refund_fee_usd!,
+                                            fare.latest_refund_hours,
+                                        )}
+                                    </td>
+                                    <td className="border-b border-zinc-200 px-3 py-3">
+                                        <button
+                                            type="button"
+                                            disabled={!fare.available}
+                                            className="h-9 border border-red-700 bg-red-700 px-4 text-sm font-semibold text-white outline-none hover:bg-red-800 focus:border-zinc-950 disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-400"
+                                            onClick={() => onPurchase(flight, fare)}
+                                        >
+                                            Buy
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }

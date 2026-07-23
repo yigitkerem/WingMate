@@ -16,10 +16,13 @@ class AirlineDemoSeeder extends Seeder
     /**
      * @var array<int, array{label: string, letter: string, offset: int, base_count: int}>
      */
-    private const array CLASS_PROFILES = [
-        ['label' => 'Economy Light', 'letter' => 'A', 'offset' => 0, 'base_count' => 18],
-        ['label' => 'Economy Flex', 'letter' => 'B', 'offset' => 65, 'base_count' => 14],
-        ['label' => 'Business', 'letter' => 'C', 'offset' => 280, 'base_count' => 8],
+    private const array EXTRA_CLASS_PROFILES = [
+        ['label' => 'Economy Saver', 'letter' => 'E', 'offset' => 35, 'base_count' => 20],
+        ['label' => 'Economy Standard', 'letter' => 'M', 'offset' => 95, 'base_count' => 18],
+        ['label' => 'Economy Full', 'letter' => 'YQ', 'offset' => 170, 'base_count' => 14],
+        ['label' => 'Premium Economy', 'letter' => 'W', 'offset' => 240, 'base_count' => 12],
+        ['label' => 'Business Saver', 'letter' => 'D', 'offset' => 430, 'base_count' => 8],
+        ['label' => 'Business Full', 'letter' => 'J', 'offset' => 680, 'base_count' => 6],
     ];
 
     /**
@@ -113,9 +116,33 @@ class AirlineDemoSeeder extends Seeder
             default => 1.00,
         };
 
+        $prices = [
+            'A' => (int) round($basePriceUsd * $demandMultiplier),
+            'B' => (int) round(($basePriceUsd + 65) * $demandMultiplier),
+            'C' => (int) round(($basePriceUsd + 280) * $demandMultiplier),
+        ];
+
+        collect(Flight::defaultAvailabilityTemplates($prices['A'], $prices['B'], $prices['C']))
+            ->each(function (array $availability, string $classLetter) use ($flight, $dayOffset): void {
+                Availability::query()->create([
+                    ...$availability,
+                    'flight_id' => $flight->id,
+                    'count_available' => $this->defaultAvailabilityCount($classLetter, $dayOffset),
+                ]);
+            });
+
+        collect(Flight::roundTripAvailabilityTemplates($prices['A'], $prices['B'], $prices['C']))
+            ->each(function (array $availability, string $classLetter) use ($flight, $dayOffset): void {
+                Availability::query()->create([
+                    ...$availability,
+                    'flight_id' => $flight->id,
+                    'count_available' => $this->roundTripAvailabilityCount($classLetter, $dayOffset),
+                ]);
+            });
+
         Availability::query()->insert(
             collect(['one_way', 'round_trip'])
-                ->flatMap(fn (string $fareType): Collection => $this->availabilityRows(
+                ->flatMap(fn (string $fareType): Collection => $this->extraAvailabilityRows(
                     $flight,
                     $basePriceUsd,
                     $demandMultiplier,
@@ -160,19 +187,19 @@ class AirlineDemoSeeder extends Seeder
     /**
      * @return Collection<int, array<string, bool|int|string|null>>
      */
-    private function availabilityRows(Flight $flight, int $basePriceUsd, float $demandMultiplier, int $dayOffset, string $fareType): Collection
+    private function extraAvailabilityRows(Flight $flight, int $basePriceUsd, float $demandMultiplier, int $dayOffset, string $fareType): Collection
     {
         $timestamp = now();
 
         return self::fareFeatureCombinations()
             ->values()
             ->map(function (array $features, int $index) use ($flight, $basePriceUsd, $demandMultiplier, $dayOffset, $fareType, $timestamp): array {
-                $profile = self::CLASS_PROFILES[$index % count(self::CLASS_PROFILES)];
+                $profile = self::EXTRA_CLASS_PROFILES[$index % count(self::EXTRA_CLASS_PROFILES)];
                 $oneWayPriceUsd = (int) round(
                     ($basePriceUsd + $profile['offset'] + $this->featurePriceOffset($features)) * $demandMultiplier,
                 );
                 $classLetters = sprintf('%s%03d', $profile['letter'], $index + 1);
-                $countAvailable = $this->availabilityCount($profile['base_count'], $profile['letter'], $dayOffset);
+                $countAvailable = $this->extraAvailabilityCount($profile['base_count'], $dayOffset);
 
                 if ($fareType === 'round_trip') {
                     $classLetters .= '(R)';
@@ -232,13 +259,32 @@ class AirlineDemoSeeder extends Seeder
         return max(50, (int) round($oneWayPriceUsd * 0.45));
     }
 
-    private function availabilityCount(int $baseCount, string $classLetter, int $dayOffset): int
+    private function extraAvailabilityCount(int $baseCount, int $dayOffset): int
+    {
+        if ($dayOffset <= 2) {
+            return fake()->numberBetween(0, $baseCount);
+        }
+
+        return fake()->numberBetween(1, $baseCount);
+    }
+
+    private function defaultAvailabilityCount(string $classLetter, int $dayOffset): int
     {
         if ($dayOffset <= 2 && $classLetter === 'A') {
             return fake()->randomElement([0, 0, 1, 2, 4]);
         }
 
-        return fake()->numberBetween($classLetter === 'A' ? 0 : 1, $baseCount);
+        return match ($classLetter) {
+            'A' => fake()->numberBetween(0, 18),
+            'B' => fake()->numberBetween(2, 14),
+            'C' => fake()->numberBetween(1, 8),
+            default => 0,
+        };
+    }
+
+    private function roundTripAvailabilityCount(string $classLetter, int $dayOffset): int
+    {
+        return max(0, (int) round($this->defaultAvailabilityCount($classLetter, $dayOffset) * 0.75));
     }
 
     private function planeForRoute(string $originCode, string $destinationCode): string

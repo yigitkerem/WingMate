@@ -95,7 +95,7 @@ class SearchFlights
         return collect(['A', 'B', 'C'])
             ->mapWithKeys(function (string $classLetter) use ($availabilities, $seatPassengers): array {
                 $availability = $availabilities
-                    ->filter(fn (Availability $availability): bool => str_contains($availability->class_letters, $classLetter))
+                    ->filter(fn (Availability $availability): bool => $this->matchesBasicClass($availability, $classLetter))
                     ->filter(fn (Availability $availability): bool => $availability->count_available >= $seatPassengers)
                     ->sortBy('base_price_usd')
                     ->first();
@@ -107,6 +107,11 @@ class SearchFlights
                 ];
             })
             ->all();
+    }
+
+    private function matchesBasicClass(Availability $availability, string $classLetter): bool
+    {
+        return in_array($availability->class_letters, [$classLetter, "{$classLetter}(R)"], true);
     }
 
     /**

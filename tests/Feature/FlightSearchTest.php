@@ -31,6 +31,13 @@ test('flight search page uses airline branding without geometric background grap
         ->toContain('Fly Istanbul, Europe, and beyond.')
         ->toContain('Book a flight')
         ->toContain('Flight status')
+        ->toContain('href={dashboard()}')
+        ->toContain('Dashboard')
+        ->toContain('!results && <OfferCarousel />')
+        ->toContain('results ? (')
+        ->toContain('Filter by feature')
+        ->toContain('Free seat selection')
+        ->toContain('No fares match the selected features.')
         ->not->toContain('AV / Official site')
         ->not->toContain('Direct prices in USD')
         ->not->toContain('Dynamic Pricer Air')
@@ -56,6 +63,13 @@ test('basic search returns cheapest available A B C fares or not available', fun
         'base_price_usd' => 120,
         'count_available' => 3,
         'seat_selection_free' => true,
+    ]);
+    Availability::factory()->create([
+        'flight_id' => $flight->id,
+        'class' => 'Expanded Matrix Fare',
+        'class_letters' => 'A001',
+        'base_price_usd' => 40,
+        'count_available' => 3,
     ]);
     Availability::factory()->create([
         'flight_id' => $flight->id,
