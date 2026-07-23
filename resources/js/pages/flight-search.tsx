@@ -1055,7 +1055,7 @@ function FlightRow({
     seatPassengers: number;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
-    const hasFullFareMatrix = Array.isArray(flight.fares);
+    const fares = flight.fares;
 
     return (
         <article className="grid gap-4 p-4 xl:grid-cols-[280px_1fr]">
@@ -1078,16 +1078,16 @@ function FlightRow({
                     {flight.plane_model}
                 </div>
             </div>
-            {hasFullFareMatrix ? (
+            {Array.isArray(fares) ? (
                 <FullFares
-                    fares={flight.fares}
+                    fares={fares}
                     seatPassengers={seatPassengers}
                     flight={flight}
                     onPurchase={onPurchase}
                 />
             ) : (
                 <BasicFares
-                    fares={flight.fares}
+                    fares={fares}
                     flight={flight}
                     onPurchase={onPurchase}
                 />
@@ -1245,7 +1245,7 @@ function FullFares({
                                 Class
                             </th>
                             <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                                Letters
+                                Code
                             </th>
                             <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
                                 Type

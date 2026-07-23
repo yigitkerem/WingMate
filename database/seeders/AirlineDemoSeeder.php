@@ -158,7 +158,7 @@ class AirlineDemoSeeder extends Seeder
      */
     public static function fareFeatureCombinations(): Collection
     {
-        return collect([0, 5, 10, 15, 20, 25])
+        return collect([0, 15, 20, 25])
             ->crossJoin(
                 [0, 8],
                 [false, true],
@@ -173,6 +173,7 @@ class AirlineDemoSeeder extends Seeder
                     ['paid' => true, 'latest_hours' => null],
                 ],
             )
+            ->reject(fn (array $combination): bool => $combination[0] > 0 && $combination[1] === 0)
             ->map(fn (array $combination): array => [
                 'checked_baggage_kg' => $combination[0],
                 'cabin_baggage_kg' => $combination[1],
@@ -198,7 +199,7 @@ class AirlineDemoSeeder extends Seeder
                 $oneWayPriceUsd = (int) round(
                     ($basePriceUsd + $profile['offset'] + $this->featurePriceOffset($features)) * $demandMultiplier,
                 );
-                $classLetters = sprintf('%s%03d', $profile['letter'], $index + 1);
+                $classLetters = self::fareFeatureCode($features);
                 $countAvailable = $this->extraAvailabilityCount($profile['base_count'], $dayOffset);
 
                 if ($fareType === 'round_trip') {
@@ -224,6 +225,20 @@ class AirlineDemoSeeder extends Seeder
                     'updated_at' => $timestamp,
                 ];
             });
+    }
+
+    /**
+     * @param  array{checked_baggage_kg: int, cabin_baggage_kg: int, seat_selection_free: bool, refund_paid: bool, latest_refund_hours: int|null, change_paid: bool, latest_change_hours: int|null}  $features
+     */
+    public static function fareFeatureCode(array $features): string
+    {
+        return collect([
+            "CB{$features['cabin_baggage_kg']}",
+            "CHK{$features['checked_baggage_kg']}",
+            $features['seat_selection_free'] ? 'S' : 'SP',
+            $features['change_paid'] ? 'CHP' : "CHFH{$features['latest_change_hours']}",
+            $features['refund_paid'] ? 'RFP' : "RFFH{$features['latest_refund_hours']}",
+        ])->implode('/');
     }
 
     /**

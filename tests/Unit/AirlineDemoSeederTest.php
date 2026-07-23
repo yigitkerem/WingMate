@@ -50,7 +50,7 @@ test('default A B C seed templates keep their booking engine fare rules', functi
     ]);
 });
 
-test('demo seeder defines every requested fare feature combination', function () {
+test('demo seeder defines every allowed extra fare feature combination', function () {
     $combinations = AirlineDemoSeeder::fareFeatureCombinations();
 
     $combinationKeys = $combinations->map(fn (array $combination): string => implode('|', [
@@ -60,11 +60,18 @@ test('demo seeder defines every requested fare feature combination', function ()
         $combination['refund_paid'] ? 'paid_refund' : "refund_{$combination['latest_refund_hours']}",
         $combination['change_paid'] ? 'paid_change' : "change_{$combination['latest_change_hours']}",
     ]));
+    $baggageKeys = $combinations->map(fn (array $combination): string => "{$combination['checked_baggage_kg']}|{$combination['cabin_baggage_kg']}");
+    $featureCodes = $combinations->map(fn (array $combination): string => AirlineDemoSeeder::fareFeatureCode($combination));
 
-    expect($combinations)->toHaveCount(216)
-        ->and($combinationKeys->unique())->toHaveCount(216)
-        ->and($combinations->pluck('checked_baggage_kg')->unique()->sort()->values()->all())->toBe([0, 5, 10, 15, 20, 25])
+    expect($combinations)->toHaveCount(90)
+        ->and($combinationKeys->unique())->toHaveCount(90)
+        ->and($featureCodes->unique())->toHaveCount(90)
+        ->and($featureCodes)->toContain('CB8/CHK20/S/CHFH36/RFFH72')
+        ->and($featureCodes)->toContain('CB0/CHK0/SP/CHP/RFP')
+        ->and($baggageKeys->unique()->sort()->values()->all())->toBe(['0|0', '0|8', '15|8', '20|8', '25|8'])
+        ->and($combinations->pluck('checked_baggage_kg')->unique()->sort()->values()->all())->toBe([0, 15, 20, 25])
         ->and($combinations->pluck('cabin_baggage_kg')->unique()->sort()->values()->all())->toBe([0, 8])
+        ->and($combinations->contains(fn (array $combination): bool => $combination['checked_baggage_kg'] > 0 && $combination['cabin_baggage_kg'] === 0))->toBeFalse()
         ->and($combinations->pluck('seat_selection_free')->unique()->sort()->values()->all())->toBe([false, true])
         ->and($combinations->where('refund_paid', false)->pluck('latest_refund_hours')->unique()->sort()->values()->all())->toBe([12, 72])
         ->and($combinations->where('refund_paid', true)->every(fn (array $combination): bool => $combination['latest_refund_hours'] === null))->toBeTrue()
