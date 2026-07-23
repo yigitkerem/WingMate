@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Availabilities\Schemas;
 
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Schema;
 
@@ -45,6 +46,9 @@ class AvailabilityForm
                         ->numeric()
                         ->minValue(0)
                         ->required(),
+                    Toggle::make('seat_selection_free')
+                        ->label('Free seat selection')
+                        ->default(false),
                     TextInput::make('count_available')
                         ->numeric()
                         ->minValue(0)

@@ -32,6 +32,7 @@ type Ticket = {
         base_price_usd: number;
         checked_baggage_kg: number;
         cabin_baggage_kg: number;
+        seat_selection_free: boolean;
     };
     flown: boolean;
 };
@@ -199,7 +200,8 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
                 </p>
                 <p className="text-[#665d55] dark:text-[#cfc2b7]">
                     {ticket.fare.checked_baggage_kg} kg checked ·{' '}
-                    {ticket.fare.cabin_baggage_kg} kg cabin
+                    {ticket.fare.cabin_baggage_kg} kg cabin ·{' '}
+                    {ticket.fare.seat_selection_free ? 'free' : 'paid'} seats
                 </p>
             </div>
         </article>

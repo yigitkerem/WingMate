@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Flights;
 use App\Filament\Resources\Flights\Pages\CreateFlight;
 use App\Filament\Resources\Flights\Pages\EditFlight;
 use App\Filament\Resources\Flights\Pages\ListFlights;
+use App\Filament\Resources\Flights\RelationManagers\AvailabilitiesRelationManager;
 use App\Filament\Resources\Flights\Schemas\FlightForm;
 use App\Filament\Resources\Flights\Tables\FlightsTable;
 use App\Models\Flight;
@@ -33,7 +34,7 @@ class FlightResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            AvailabilitiesRelationManager::class,
         ];
     }
 

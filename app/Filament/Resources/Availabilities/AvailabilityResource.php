@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Availabilities;
 use App\Filament\Resources\Availabilities\Pages\CreateAvailability;
 use App\Filament\Resources\Availabilities\Pages\EditAvailability;
 use App\Filament\Resources\Availabilities\Pages\ListAvailabilities;
+use App\Filament\Resources\Availabilities\RelationManagers\TicketsRelationManager;
 use App\Filament\Resources\Availabilities\Schemas\AvailabilityForm;
 use App\Filament\Resources\Availabilities\Tables\AvailabilitiesTable;
 use App\Models\Availability;
@@ -33,7 +34,7 @@ class AvailabilityResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            TicketsRelationManager::class,
         ];
     }
 

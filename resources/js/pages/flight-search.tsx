@@ -28,6 +28,7 @@ type Fare = {
     fare_type?: 'one_way' | 'round_trip';
     checked_baggage_kg?: number;
     cabin_baggage_kg?: number;
+    seat_selection_free?: boolean;
     change_fee_usd?: number;
     refund_fee_usd?: number;
     latest_refund_hours?: number | null;
@@ -94,24 +95,16 @@ const controlClass =
 
 function AirportBackground() {
     return (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[680px] overflow-hidden">
             <div
-                className="absolute inset-0 bg-cover bg-center opacity-20"
+                className="absolute inset-0 bg-cover bg-center opacity-70"
                 style={{
                     backgroundImage:
                         "url('https://unsplash.com/photos/GsVO12cQrzA/download?force=true&w=1800')",
                 }}
             />
-            <div className="absolute inset-0 bg-zinc-100/80" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(39,39,42,0.055)_1px,transparent_1px),linear-gradient(0deg,rgba(39,39,42,0.045)_1px,transparent_1px)] bg-[size:72px_72px]" />
-            <div className="absolute top-20 left-[8%] h-px w-[78%] rotate-[-8deg] bg-red-700/20" />
-            <div className="absolute top-56 left-[18%] h-px w-[58%] rotate-[12deg] bg-zinc-700/15" />
-            <div className="absolute right-[10%] bottom-32 h-px w-[46%] rotate-[-18deg] bg-red-700/15" />
-            <div className="absolute top-16 right-[17%] size-2 border border-red-700 bg-white" />
-            <div className="absolute top-48 left-[13%] size-2 border border-zinc-700 bg-white" />
-            <div className="absolute right-[27%] bottom-44 size-2 border border-red-700 bg-white" />
-            <div className="absolute -right-28 top-28 h-80 w-80 border border-zinc-300/70" />
-            <div className="absolute -left-20 bottom-12 h-64 w-64 border border-zinc-300/70" />
+            <div className="absolute inset-0 bg-white/35" />
+            <div className="absolute inset-0 bg-linear-to-b from-white/10 via-zinc-100/65 to-zinc-100" />
         </div>
     );
 }
@@ -154,183 +147,188 @@ export default function FlightSearch({
 
     return (
         <>
-            <Head title="Airline Price Search" />
+            <Head title="AeroVista Airlines Price Search" />
             <main className="relative min-h-screen overflow-hidden bg-zinc-100 font-sans text-zinc-950">
                 <AirportBackground />
                 <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-                    <header className="flex flex-col justify-between gap-3 border-b border-zinc-300 pb-5 sm:flex-row sm:items-end">
-                        <div>
-                            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-normal text-red-700">
-                                <Plane className="size-4" />
-                                Dynamic Pricer Air
-                            </div>
-                            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-zinc-950">
-                                Price search
-                            </h1>
-                        </div>
-                        <nav className="flex flex-wrap gap-2">
-                            {!customer.isAuthenticated && (
-                                <>
-                                    <a
-                                        className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
-                                        href="/register"
-                                    >
-                                        Sign up
-                                    </a>
-                                    <a
-                                        className="inline-flex h-10 items-center justify-center border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
-                                        href="/login"
-                                    >
-                                        Log in
-                                    </a>
-                                </>
-                            )}
-                            {customer.isAdmin && (
-                                <a
-                                    className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
-                                    href="/admin"
-                                >
-                                    Admin
-                                </a>
-                            )}
-                        </nav>
-                    </header>
+                    <AirlineHeader
+                        customer={customer}
+                        canUseAdmin={customer.isAdmin}
+                    />
 
-                    <form
-                        onSubmit={submit}
-                        className="border border-zinc-300 bg-white/95 p-4 shadow-[0_12px_40px_rgba(24,24,27,0.08)] sm:p-5"
-                    >
-                        <div className="grid gap-4">
-                            <div className="grid gap-4 lg:grid-cols-[1.3fr_1.3fr_1fr_1fr]">
-                                <SearchableAirport
-                                    airports={airports}
-                                    label="Origin"
-                                    value={form.origin_airport_id}
-                                    error={errors.origin_airport_id}
-                                    isOpen={openPanel === 'origin'}
-                                    onToggle={() =>
-                                        setOpenPanel(
-                                            openPanel === 'origin' ? null : 'origin',
-                                        )
-                                    }
-                                    onClose={() => setOpenPanel(null)}
-                                    onChange={(id) =>
-                                        update('origin_airport_id', id)
-                                    }
-                                />
-                                <SearchableAirport
-                                    airports={airports}
-                                    label="Destination"
-                                    value={form.destination_airport_id}
-                                    error={errors.destination_airport_id}
-                                    isOpen={openPanel === 'destination'}
-                                    onToggle={() =>
-                                        setOpenPanel(
-                                            openPanel === 'destination'
-                                                ? null
-                                                : 'destination',
-                                        )
-                                    }
-                                    onClose={() => setOpenPanel(null)}
-                                    onChange={(id) =>
-                                        update('destination_airport_id', id)
-                                    }
-                                />
-                                <SegmentedControl
-                                    label="Trip"
-                                    value={form.trip_type}
-                                    options={[
-                                        ['one_way', 'One way'],
-                                        ['round_trip', 'Round trip'],
-                                    ]}
-                                    onChange={(value) =>
-                                        update(
-                                            'trip_type',
-                                            value as Filters['trip_type'],
-                                        )
-                                    }
-                                />
-                                {canUseFullSearch ? (
+                    <section className="grid min-h-[470px] items-end gap-6 py-8 lg:grid-cols-[0.9fr_1.35fr] lg:py-12">
+                        <div className="max-w-xl pb-2">
+                            <div className="inline-flex border border-red-800 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-normal text-red-700">
+                                Summer network now open
+                            </div>
+                            <h1 className="mt-5 text-5xl font-semibold tracking-normal text-zinc-950 sm:text-6xl">
+                                Fly Istanbul, Europe, and beyond.
+                            </h1>
+                            <p className="mt-4 max-w-lg text-base font-medium leading-7 text-zinc-700">
+                                Book direct with AeroVista Airlines for clear fares,
+                                practical baggage choices, and live seat availability.
+                            </p>
+                            <div className="mt-6 grid grid-cols-3 border border-zinc-300 bg-white/90">
+                                {[
+                                    ['86', 'Destinations'],
+                                    ['31', 'Countries'],
+                                    ['24h', 'Fare hold'],
+                                ].map(([value, label]) => (
+                                    <div
+                                        key={label}
+                                        className="border-r border-zinc-300 p-3 last:border-r-0"
+                                    >
+                                        <div className="text-2xl font-semibold text-zinc-950">
+                                            {value}
+                                        </div>
+                                        <div className="mt-1 text-xs font-semibold uppercase tracking-normal text-zinc-500">
+                                            {label}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <form
+                            onSubmit={submit}
+                            className="border border-zinc-300 bg-white p-4 shadow-[0_18px_55px_rgba(24,24,27,0.16)] sm:p-5"
+                        >
+                            <div className="mb-5 flex flex-col justify-between gap-4 border-b border-zinc-300 pb-4 sm:flex-row sm:items-end">
+                                <div>
+                                    <div className="text-xs font-semibold uppercase tracking-normal text-red-700">
+                                        Book a flight
+                                    </div>
+                                    <h2 className="mt-1 text-2xl font-semibold tracking-normal">
+                                        Find your fare
+                                    </h2>
+                                </div>
+                            </div>
+                            <div className="grid gap-4">
+                                <div className="grid gap-4 lg:grid-cols-[1.3fr_1.3fr_1fr]">
+                                    <SearchableAirport
+                                        airports={airports}
+                                        label="From"
+                                        value={form.origin_airport_id}
+                                        error={errors.origin_airport_id}
+                                        isOpen={openPanel === 'origin'}
+                                        onToggle={() =>
+                                            setOpenPanel(
+                                                openPanel === 'origin'
+                                                    ? null
+                                                    : 'origin',
+                                            )
+                                        }
+                                        onClose={() => setOpenPanel(null)}
+                                        onChange={(id) =>
+                                            update('origin_airport_id', id)
+                                        }
+                                    />
+                                    <SearchableAirport
+                                        airports={airports}
+                                        label="To"
+                                        value={form.destination_airport_id}
+                                        error={errors.destination_airport_id}
+                                        isOpen={openPanel === 'destination'}
+                                        onToggle={() =>
+                                            setOpenPanel(
+                                                openPanel === 'destination'
+                                                    ? null
+                                                    : 'destination',
+                                            )
+                                        }
+                                        onClose={() => setOpenPanel(null)}
+                                        onChange={(id) =>
+                                            update('destination_airport_id', id)
+                                        }
+                                    />
                                     <SegmentedControl
-                                        label="Mode"
-                                        value={form.search_mode}
+                                        label="Trip"
+                                        value={form.trip_type}
                                         options={[
-                                            ['basic', 'Basic'],
-                                            ['full', 'Full'],
+                                            ['one_way', 'One-way'],
+                                            ['round_trip', 'Roundtrip'],
                                         ]}
                                         onChange={(value) =>
                                             update(
-                                                'search_mode',
-                                                value as Filters['search_mode'],
+                                                'trip_type',
+                                                value as Filters['trip_type'],
                                             )
                                         }
                                     />
-                                ) : (
-                                    <div className="flex flex-col gap-2">
-                                        <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
-                                            Mode
-                                        </span>
-                                        <div className="flex h-12 items-center border border-zinc-300 bg-zinc-100 px-3 text-sm font-medium text-zinc-600">
-                                            Basic
-                                        </div>
+                                </div>
+                                <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
+                                    <DatePicker
+                                        label="Depart"
+                                        value={form.depart_date}
+                                        error={errors.depart_date}
+                                        isOpen={openPanel === 'depart'}
+                                        onToggle={() =>
+                                            setOpenPanel(
+                                                openPanel === 'depart'
+                                                    ? null
+                                                    : 'depart',
+                                            )
+                                        }
+                                        onClose={() => setOpenPanel(null)}
+                                        onChange={(date) =>
+                                            update('depart_date', date)
+                                        }
+                                    />
+                                    <DatePicker
+                                        disabled={form.trip_type === 'one_way'}
+                                        label="Return"
+                                        value={form.return_date}
+                                        error={errors.return_date}
+                                        isOpen={openPanel === 'return'}
+                                        onToggle={() =>
+                                            setOpenPanel(
+                                                openPanel === 'return'
+                                                    ? null
+                                                    : 'return',
+                                            )
+                                        }
+                                        onClose={() => setOpenPanel(null)}
+                                        onChange={(date) =>
+                                            update('return_date', date)
+                                        }
+                                    />
+                                    <PassengerPicker
+                                        adults={form.adults}
+                                        children={form.children}
+                                        babies={form.babies}
+                                        errors={errors}
+                                        canUseFullSearch={canUseFullSearch}
+                                        searchMode={form.search_mode}
+                                        isOpen={openPanel === 'passengers'}
+                                        onToggle={() =>
+                                            setOpenPanel(
+                                                openPanel === 'passengers'
+                                                    ? null
+                                                    : 'passengers',
+                                            )
+                                        }
+                                        onChange={(key, value) =>
+                                            update(key, value)
+                                        }
+                                        onSearchModeChange={(value) =>
+                                            update('search_mode', value)
+                                        }
+                                    />
+                                    <div className="flex items-end">
+                                        <button
+                                            type="submit"
+                                            className="inline-flex h-12 w-full items-center justify-center gap-2 border border-red-700 bg-red-700 px-6 text-sm font-semibold text-white outline-none transition-colors hover:bg-red-800 focus:border-zinc-950 lg:w-auto"
+                                        >
+                                            <Search className="size-4" />
+                                            Search flights
+                                        </button>
                                     </div>
-                                )}
-                            </div>
-                            <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
-                                <DatePicker
-                                    label="Depart"
-                                    value={form.depart_date}
-                                    error={errors.depart_date}
-                                    isOpen={openPanel === 'depart'}
-                                    onToggle={() =>
-                                        setOpenPanel(
-                                            openPanel === 'depart' ? null : 'depart',
-                                        )
-                                    }
-                                    onClose={() => setOpenPanel(null)}
-                                    onChange={(date) => update('depart_date', date)}
-                                />
-                                <DatePicker
-                                    disabled={form.trip_type === 'one_way'}
-                                    label="Return"
-                                    value={form.return_date}
-                                    error={errors.return_date}
-                                    isOpen={openPanel === 'return'}
-                                    onToggle={() =>
-                                        setOpenPanel(
-                                            openPanel === 'return' ? null : 'return',
-                                        )
-                                    }
-                                    onClose={() => setOpenPanel(null)}
-                                    onChange={(date) => update('return_date', date)}
-                                />
-                                <PassengerPicker
-                                    adults={form.adults}
-                                    children={form.children}
-                                    babies={form.babies}
-                                    errors={errors}
-                                    isOpen={openPanel === 'passengers'}
-                                    onToggle={() =>
-                                        setOpenPanel(
-                                            openPanel === 'passengers'
-                                                ? null
-                                                : 'passengers',
-                                        )
-                                    }
-                                    onChange={(key, value) => update(key, value)}
-                                />
-                                <div className="flex items-end">
-                                    <button
-                                        type="submit"
-                                        className="inline-flex h-12 w-full items-center justify-center gap-2 border border-red-700 bg-red-700 px-6 text-sm font-semibold text-white outline-none transition-colors hover:bg-red-800 focus:border-zinc-950 lg:w-auto"
-                                    >
-                                        <Search className="size-4" />
-                                        Search
-                                    </button>
                                 </div>
                             </div>
-                        </div>
-                    </form>
+                        </form>
+                    </section>
+
+                    <QuickActions />
 
                     <OfferCarousel />
 
@@ -357,28 +355,145 @@ export default function FlightSearch({
     );
 }
 
+function AirlineHeader({
+    customer,
+    canUseAdmin,
+}: {
+    customer: Props['customer'];
+    canUseAdmin: boolean;
+}) {
+    return (
+        <header className="border border-zinc-300 bg-white/95 shadow-[0_10px_35px_rgba(24,24,27,0.08)]">
+            <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center border border-red-900 bg-red-700 text-white shadow-sm">
+                        <Plane className="size-6 -rotate-45" />
+                    </div>
+                    <div>
+                        <div className="text-xl font-semibold tracking-normal text-zinc-950">
+                            AeroVista Airlines
+                        </div>
+                    </div>
+                </div>
+
+                <nav className="flex flex-wrap items-center gap-1 text-sm font-semibold text-zinc-700">
+                    {['Book', 'Manage', 'Check-in', 'Flight status', 'Loyalty'].map(
+                        (item) => (
+                            <a
+                                key={item}
+                                className="border border-transparent px-3 py-2 outline-none hover:border-zinc-300 hover:bg-zinc-100 focus:border-red-600"
+                                href="#"
+                            >
+                                {item}
+                            </a>
+                        ),
+                    )}
+                </nav>
+
+                <div className="flex flex-wrap gap-2">
+                    {!customer.isAuthenticated && (
+                        <>
+                            <a
+                                className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                                href="/register"
+                            >
+                                Join
+                            </a>
+                            <a
+                                className="inline-flex h-10 items-center justify-center border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                                href="/login"
+                            >
+                                Log in
+                            </a>
+                        </>
+                    )}
+                    {canUseAdmin && (
+                        <a
+                            className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                            href="/admin"
+                        >
+                            Admin
+                        </a>
+                    )}
+                </div>
+            </div>
+        </header>
+    );
+}
+
+function QuickActions() {
+    const actions = [
+        {
+            title: 'Manage booking',
+            description: 'Change seats and passenger details',
+            icon: <Briefcase className="size-5" />,
+        },
+        {
+            title: 'Online check-in',
+            description: 'Opens 24 hours before departure',
+            icon: <Plane className="size-5" />,
+        },
+        {
+            title: 'Flight status',
+            description: 'Live departure and arrival updates',
+            icon: <CalendarDays className="size-5" />,
+        },
+        {
+            title: 'Baggage options',
+            description: 'Cabin and checked allowance',
+            icon: <Luggage className="size-5" />,
+        },
+    ];
+
+    return (
+        <section className="grid border border-zinc-300 bg-white md:grid-cols-4">
+            {actions.map((action) => (
+                <a
+                    key={action.title}
+                    href="#"
+                    className="flex min-h-28 items-start gap-3 border-b border-zinc-300 p-4 outline-none hover:bg-zinc-100 focus:bg-red-50 md:border-r md:border-b-0 md:last:border-r-0"
+                >
+                    <span className="mt-1 text-red-700">{action.icon}</span>
+                    <span>
+                        <span className="block text-sm font-semibold text-zinc-950">
+                            {action.title}
+                        </span>
+                        <span className="mt-1 block text-sm leading-5 text-zinc-600">
+                            {action.description}
+                        </span>
+                    </span>
+                </a>
+            ))}
+        </section>
+    );
+}
+
 function OfferCarousel() {
     const offers = [
         {
-            route: 'IST to LHR',
+            route: 'Istanbul to London',
+            code: 'IST - LHR',
             date: 'Aug 6',
             price: '$158',
             image: 'https://unsplash.com/photos/S3N2cPMWhEA/download?force=true&w=900',
         },
         {
-            route: 'AMS to IST',
+            route: 'Amsterdam to Istanbul',
+            code: 'AMS - IST',
             date: 'Aug 9',
             price: '$132',
             image: 'https://unsplash.com/photos/GsVO12cQrzA/download?force=true&w=900',
         },
         {
-            route: 'IST to CDG',
+            route: 'Istanbul to Paris',
+            code: 'IST - CDG',
             date: 'Aug 12',
             price: '$145',
             image: 'https://unsplash.com/photos/RduE7aSO2SA/download?force=true&w=900',
         },
         {
-            route: 'FRA to JFK',
+            route: 'Frankfurt to New York',
+            code: 'FRA - JFK',
             date: 'Aug 18',
             price: '$516',
             image: 'https://unsplash.com/photos/GsVO12cQrzA/download?force=true&w=900',
@@ -386,34 +501,53 @@ function OfferCarousel() {
     ];
 
     return (
-        <section className="border border-zinc-300 bg-white/95 p-4">
-            <div className="mb-3 flex items-end justify-between gap-4">
+        <section className="border border-zinc-300 bg-white p-4">
+            <div className="mb-4 flex flex-col justify-between gap-4 border-b border-zinc-300 pb-4 sm:flex-row sm:items-end">
                 <div>
-                    <h2 className="text-lg font-semibold">Cheap dates</h2>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-red-700">
+                        Featured fares
+                    </div>
+                    <h2 className="mt-1 text-2xl font-semibold tracking-normal">
+                        Popular routes this week
+                    </h2>
                     <p className="text-sm text-zinc-600">
-                        Highlighted low-fare travel windows.
+                        Direct AeroVista fares with seasonal availability.
                     </p>
                 </div>
+                <a
+                    className="inline-flex h-10 items-center justify-center gap-2 border border-zinc-950 bg-white px-4 text-sm font-semibold text-zinc-950 outline-none hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                    href="#"
+                >
+                    View all routes
+                    <ArrowRight className="size-4" />
+                </a>
             </div>
             <div className="flex snap-x gap-3 overflow-x-auto pb-1">
                 {offers.map((offer) => (
                     <article
                         key={`${offer.route}-${offer.date}`}
-                        className="relative h-40 min-w-[260px] snap-start overflow-hidden border border-zinc-300 bg-zinc-900 text-white"
+                        className="relative h-56 min-w-[280px] snap-start overflow-hidden border border-zinc-300 bg-zinc-900 text-white"
                     >
                         <div
                             className="absolute inset-0 bg-cover bg-center opacity-65"
                             style={{ backgroundImage: `url('${offer.image}')` }}
                         />
                         <div className="absolute inset-0 bg-linear-to-t from-zinc-950 via-zinc-950/30 to-transparent" />
-                        <div className="relative flex h-full flex-col justify-end p-4">
-                            <div className="text-sm font-medium">{offer.date}</div>
-                            <div className="mt-1 flex items-end justify-between gap-4">
-                                <div className="text-xl font-semibold">
-                                    {offer.route}
+                        <div className="relative flex h-full flex-col justify-between p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="border border-white/70 bg-white/10 px-2 py-1 text-xs font-semibold uppercase tracking-normal">
+                                    {offer.code}
+                                </span>
+                                <span className="text-sm font-medium">
+                                    From {offer.price}
+                                </span>
+                            </div>
+                            <div>
+                                <div className="text-sm font-medium">
+                                    Travel from {offer.date}
                                 </div>
-                                <div className="text-2xl font-semibold text-white">
-                                    {offer.price}
+                                <div className="mt-1 text-2xl font-semibold text-white">
+                                    {offer.route}
                                 </div>
                             </div>
                         </div>
@@ -452,7 +586,9 @@ function SearchableAirport({
     });
 
     return (
-        <label className="relative flex flex-col gap-2">
+        <div
+            className={`relative flex flex-col gap-2 ${isOpen ? 'z-40' : 'z-10'}`}
+        >
             <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
                 {label}
             </span>
@@ -469,7 +605,7 @@ function SearchableAirport({
                 <ChevronDown className="size-4 text-zinc-500" />
             </button>
             {isOpen && (
-                <div className="absolute top-full right-0 left-0 z-20 border border-zinc-950 bg-white">
+                <div className="absolute top-full left-0 z-40 mt-2 w-[calc(100vw-2rem)] max-w-[22rem] border border-zinc-950 bg-white sm:w-[22rem]">
                     <input
                         autoFocus
                         className={inputClass}
@@ -499,7 +635,7 @@ function SearchableAirport({
                 </div>
             )}
             {error && <span className="text-xs text-red-700">{error}</span>}
-        </label>
+        </div>
     );
 }
 
@@ -519,12 +655,12 @@ function SegmentedControl({
             <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
                 {label}
             </span>
-            <div className="grid h-12 grid-cols-2 border border-zinc-300">
+            <div className="grid h-12 min-w-0 grid-cols-2 border border-zinc-300">
                 {options.map(([optionValue, optionLabel]) => (
                     <button
                         type="button"
                         key={optionValue}
-                        className={`px-3 text-sm font-medium outline-none transition-colors focus:border focus:border-red-600 ${
+                        className={`min-w-0 whitespace-nowrap px-2 text-sm font-medium outline-none transition-colors focus:border focus:border-red-600 ${
                             value === optionValue
                                 ? 'bg-zinc-950 text-white'
                                 : 'bg-white text-zinc-950 hover:bg-zinc-100'
@@ -562,7 +698,9 @@ function DatePicker({
     const days = useMemo(() => calendarDays(month), [month]);
 
     return (
-        <label className="relative flex flex-col gap-2">
+        <div
+            className={`relative flex flex-col gap-2 ${isOpen ? 'z-40' : 'z-10'}`}
+        >
             <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
                 {label}
             </span>
@@ -576,7 +714,7 @@ function DatePicker({
                 <CalendarDays className="size-4 text-zinc-500" />
             </button>
             {isOpen && !disabled && (
-                <div className="absolute top-full right-0 left-0 z-20 border border-zinc-950 bg-white p-3">
+                <div className="absolute top-full left-0 z-40 mt-2 w-[calc(100vw-2rem)] max-w-[24rem] border border-zinc-950 bg-white p-3 sm:w-[24rem]">
                     <div className="mb-3 flex items-center justify-between">
                         <button
                             type="button"
@@ -639,7 +777,7 @@ function DatePicker({
                 </div>
             )}
             {error && <span className="text-xs text-red-700">{error}</span>}
-        </label>
+        </div>
     );
 }
 
@@ -648,27 +786,35 @@ function PassengerPicker({
     children,
     babies,
     errors,
+    canUseFullSearch,
+    searchMode,
     isOpen,
     onToggle,
     onChange,
+    onSearchModeChange,
 }: {
     adults: number;
     children: number;
     babies: number;
     errors: Record<string, string>;
+    canUseFullSearch: boolean;
+    searchMode: Filters['search_mode'];
     isOpen: boolean;
     onToggle: () => void;
     onChange: (
         key: 'adults' | 'children' | 'babies',
         value: number,
     ) => void;
+    onSearchModeChange: (value: Filters['search_mode']) => void;
 }) {
     const total = adults + children + babies;
     const label = `${total} ${total === 1 ? 'Passenger' : 'Passengers'}`;
     const maxPassengers = 9;
 
     return (
-        <div className="relative flex flex-col gap-2">
+        <div
+            className={`relative flex flex-col gap-2 ${isOpen ? 'z-40' : 'z-10'}`}
+        >
             <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
                 Passengers
             </span>
@@ -681,7 +827,7 @@ function PassengerPicker({
                 <Users className="size-4 text-zinc-500" />
             </button>
             {isOpen && (
-                <div className="absolute top-full right-0 left-0 z-20 border border-zinc-950 bg-white p-3">
+                <div className="absolute top-full left-0 z-40 mt-2 w-[calc(100vw-2rem)] max-w-[26rem] border border-zinc-950 bg-white p-3 sm:w-[26rem]">
                     <PassengerRow
                         icon={<Users className="size-4" />}
                         label="Adult"
@@ -721,6 +867,23 @@ function PassengerPicker({
                             )
                         }
                     />
+                    {canUseFullSearch && (
+                        <div className="mt-3 border-t border-zinc-300 pt-3">
+                            <SegmentedControl
+                                label="Fare view"
+                                value={searchMode}
+                                options={[
+                                    ['basic', 'Best'],
+                                    ['full', 'All fares'],
+                                ]}
+                                onChange={(value) =>
+                                    onSearchModeChange(
+                                        value as Filters['search_mode'],
+                                    )
+                                }
+                            />
+                        </div>
+                    )}
                 </div>
             )}
             {(errors.adults || errors.children || errors.babies) && (
@@ -997,7 +1160,7 @@ function FullFares({
                             Seats
                         </th>
                         <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
-                            Baggage
+                            Bags / seats
                         </th>
                         <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
                             Change
@@ -1038,7 +1201,8 @@ function FullFares({
                             </td>
                             <td className="border-b border-zinc-200 px-3 py-3">
                                 {fare.checked_baggage_kg} kg /{' '}
-                                {fare.cabin_baggage_kg} kg
+                                {fare.cabin_baggage_kg} kg ·{' '}
+                                {seatSelectionLabel(fare.seat_selection_free)}
                             </td>
                             <td className="border-b border-zinc-200 px-3 py-3">
                                 {feeLabel(
@@ -1085,6 +1249,7 @@ function FareTerms({ fare, compact = false }: { fare: Fare; compact?: boolean })
                 <Briefcase className="size-3.5" />
                 {fare.cabin_baggage_kg} kg cabin
             </span>
+            <span>{seatSelectionLabel(fare.seat_selection_free)}</span>
             <span>{feeLabel(fare.change_fee_usd!, fare.latest_change_hours)}</span>
             <span>{feeLabel(fare.refund_fee_usd!, fare.latest_refund_hours)}</span>
         </div>
@@ -1263,6 +1428,10 @@ function feeLabel(feeUsd: number, latestHours?: number | null) {
     }
 
     return `${fee} until ${latestHours}h`;
+}
+
+function seatSelectionLabel(isFree?: boolean) {
+    return isFree ? 'Free seat selection' : 'Paid seat selection';
 }
 
 function fareTypeLabel(fareType?: 'one_way' | 'round_trip') {

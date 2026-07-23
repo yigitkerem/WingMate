@@ -18,6 +18,27 @@ test('flight search page is displayed', function () {
         );
 });
 
+test('refreshing the search page redirects home', function () {
+    $this->get('/search')
+        ->assertRedirect(route('home'));
+});
+
+test('flight search page uses airline branding without geometric background graphics', function () {
+    $source = file_get_contents(resource_path('js/pages/flight-search.tsx'));
+
+    expect($source)
+        ->toContain('AeroVista Airlines')
+        ->toContain('Fly Istanbul, Europe, and beyond.')
+        ->toContain('Book a flight')
+        ->toContain('Flight status')
+        ->not->toContain('AV / Official site')
+        ->not->toContain('Direct prices in USD')
+        ->not->toContain('Dynamic Pricer Air')
+        ->not->toContain('bg-[linear-gradient(90deg')
+        ->not->toContain('rotate-[-8deg]')
+        ->not->toContain('size-2 border');
+});
+
 test('basic search returns cheapest available A B C fares or not available', function () {
     [$origin, $destination] = createAirportPair();
     $flight = Flight::factory()->create([
@@ -34,6 +55,7 @@ test('basic search returns cheapest available A B C fares or not available', fun
         'class_letters' => 'A',
         'base_price_usd' => 120,
         'count_available' => 3,
+        'seat_selection_free' => true,
     ]);
     Availability::factory()->create([
         'flight_id' => $flight->id,
@@ -60,6 +82,7 @@ test('basic search returns cheapest available A B C fares or not available', fun
             ->where('results.outbound.0.flight_number', 'DP100')
             ->where('results.outbound.0.fares.A.available', true)
             ->where('results.outbound.0.fares.A.base_price_usd', 120)
+            ->where('results.outbound.0.fares.A.seat_selection_free', true)
             ->where('results.outbound.0.fares.B.available', false)
             ->where('results.outbound.0.fares.C.available', false),
         );

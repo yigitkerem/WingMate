@@ -35,6 +35,7 @@ class Flight extends Model
                 'class' => 'Economy Light',
                 'checked_baggage_kg' => 15,
                 'cabin_baggage_kg' => 8,
+                'seat_selection_free' => false,
                 'change_fee_usd' => $basePriceUsd,
                 'refund_fee_usd' => $basePriceUsd,
                 'latest_refund_hours' => null,
@@ -47,6 +48,7 @@ class Flight extends Model
                 'class' => 'Economy Flex',
                 'checked_baggage_kg' => 20,
                 'cabin_baggage_kg' => 8,
+                'seat_selection_free' => true,
                 'change_fee_usd' => 30,
                 'refund_fee_usd' => 50,
                 'latest_refund_hours' => 12,
@@ -59,6 +61,7 @@ class Flight extends Model
                 'class' => 'Business',
                 'checked_baggage_kg' => 25,
                 'cabin_baggage_kg' => 8,
+                'seat_selection_free' => true,
                 'change_fee_usd' => 0,
                 'refund_fee_usd' => 0,
                 'latest_refund_hours' => 6,
@@ -83,7 +86,7 @@ class Flight extends Model
     }
 
     /**
-     * @return array<string, array<string, int|string|null>>
+     * @return array<string, array<string, bool|int|string|null>>
      */
     public static function defaultAvailabilityTemplates(int $aPriceUsd, int $bPriceUsd, int $cPriceUsd): array
     {
@@ -95,7 +98,7 @@ class Flight extends Model
     }
 
     /**
-     * @return array<string, array<string, int|string|null>>
+     * @return array<string, array<string, bool|int|string|null>>
      */
     public static function roundTripAvailabilityTemplates(int $aPriceUsd, int $bPriceUsd, int $cPriceUsd): array
     {

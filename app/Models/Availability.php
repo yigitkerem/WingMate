@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $class
  * @property int $checked_baggage_kg
  * @property int $cabin_baggage_kg
+ * @property bool $seat_selection_free
  * @property int $change_fee_usd
  * @property int $refund_fee_usd
  * @property int|null $latest_refund_hours
@@ -33,6 +34,7 @@ use Illuminate\Support\Carbon;
     'class',
     'checked_baggage_kg',
     'cabin_baggage_kg',
+    'seat_selection_free',
     'change_fee_usd',
     'refund_fee_usd',
     'latest_refund_hours',
@@ -49,7 +51,15 @@ class Availability extends Model
 
     protected $attributes = [
         'fare_type' => 'one_way',
+        'seat_selection_free' => false,
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'seat_selection_free' => 'boolean',
+        ];
+    }
 
     public function flight(): BelongsTo
     {

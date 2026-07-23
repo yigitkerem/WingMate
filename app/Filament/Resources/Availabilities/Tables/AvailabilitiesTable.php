@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Availabilities\Tables;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -43,6 +44,10 @@ class AvailabilitiesTable
                 TextColumn::make('cabin_baggage_kg')
                     ->label('Cabin kg')
                     ->sortable(),
+                IconColumn::make('seat_selection_free')
+                    ->label('Free seats')
+                    ->boolean()
+                    ->sortable(),
                 TextColumn::make('change_fee_usd')
                     ->money('USD')
                     ->sortable(),
@@ -59,6 +64,12 @@ class AvailabilitiesTable
                     ->options([
                         'one_way' => 'One way',
                         'round_trip' => 'Round trip',
+                    ]),
+                SelectFilter::make('seat_selection_free')
+                    ->label('Seat selection')
+                    ->options([
+                        '1' => 'Free',
+                        '0' => 'Paid',
                     ]),
             ])
             ->recordActions([

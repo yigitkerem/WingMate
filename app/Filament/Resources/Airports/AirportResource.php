@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Airports;
 use App\Filament\Resources\Airports\Pages\CreateAirport;
 use App\Filament\Resources\Airports\Pages\EditAirport;
 use App\Filament\Resources\Airports\Pages\ListAirports;
+use App\Filament\Resources\Airports\RelationManagers\FlightsRelationManager;
 use App\Filament\Resources\Airports\Schemas\AirportForm;
 use App\Filament\Resources\Airports\Tables\AirportsTable;
 use App\Models\Airport;
@@ -33,7 +34,7 @@ class AirportResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            FlightsRelationManager::class,
         ];
     }
 

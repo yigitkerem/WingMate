@@ -21,7 +21,7 @@ class DashboardController extends Controller
             ->select(['id', 'availability_id', 'pnr_id', 'flown', 'created_at'])
             ->with([
                 'pnr:id,user_id,first_name,last_name,passport_number',
-                'availability:id,flight_id,class,class_letters,fare_type,base_price_usd,checked_baggage_kg,cabin_baggage_kg',
+                'availability:id,flight_id,class,class_letters,fare_type,base_price_usd,checked_baggage_kg,cabin_baggage_kg,seat_selection_free',
                 'availability.flight:id,date,hour,origin_airport_id,destination_airport_id,flight_number,plane_model',
                 'availability.flight.originAirport:id,name,code',
                 'availability.flight.destinationAirport:id,name,code',
@@ -64,6 +64,7 @@ class DashboardController extends Controller
                         'base_price_usd' => $ticket->availability->base_price_usd,
                         'checked_baggage_kg' => $ticket->availability->checked_baggage_kg,
                         'cabin_baggage_kg' => $ticket->availability->cabin_baggage_kg,
+                        'seat_selection_free' => $ticket->availability->seat_selection_free,
                     ],
                     'flown' => $ticket->flown,
                 ];

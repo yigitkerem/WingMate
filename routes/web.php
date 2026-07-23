@@ -6,6 +6,7 @@ use App\Http\Controllers\PurchaseTicketController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [FlightSearchController::class, 'index'])->name('home');
+Route::get('/search', fn () => to_route('home'));
 Route::post('/search', [FlightSearchController::class, 'search'])->name('flight-search.search');
 Route::post('/purchase', PurchaseTicketController::class)->name('tickets.purchase');
 

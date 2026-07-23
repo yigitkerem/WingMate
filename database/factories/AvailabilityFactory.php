@@ -25,6 +25,7 @@ class AvailabilityFactory extends Factory
             'class' => fake()->randomElement(['Economy Light', 'Economy Standard', 'Economy Flex', 'Premium Economy', 'Business']),
             'checked_baggage_kg' => fake()->randomElement([0, 15, 20, 23, 25, 30]),
             'cabin_baggage_kg' => 8,
+            'seat_selection_free' => fake()->boolean(),
             'change_fee_usd' => fake()->randomElement([0, 30, 50, 80, 120]),
             'refund_fee_usd' => fake()->randomElement([0, 50, 90, 150, 220]),
             'latest_refund_hours' => fake()->optional(0.8)->randomElement([6, 12, 24]),
