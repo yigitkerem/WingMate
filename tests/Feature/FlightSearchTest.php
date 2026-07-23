@@ -3,6 +3,7 @@
 use App\Models\Airport;
 use App\Models\Availability;
 use App\Models\Flight;
+use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('flight search page is displayed', function () {
@@ -42,7 +43,7 @@ test('basic search returns cheapest available A B C fares or not available', fun
         'count_available' => 1,
     ]);
 
-    $this->get(route('home', [
+    $this->post(route('flight-search.search'), [
         'origin_airport_id' => $origin->id,
         'destination_airport_id' => $destination->id,
         'trip_type' => 'one_way',
@@ -51,7 +52,7 @@ test('basic search returns cheapest available A B C fares or not available', fun
         'adults' => 2,
         'children' => 0,
         'babies' => 1,
-    ]))
+    ])
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('flight-search')
@@ -65,6 +66,7 @@ test('basic search returns cheapest available A B C fares or not available', fun
 });
 
 test('full search shows every fare class including sold out classes', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
     [$origin, $destination] = createAirportPair();
     $flight = Flight::factory()->create([
         'origin_airport_id' => $origin->id,
@@ -89,7 +91,7 @@ test('full search shows every fare class including sold out classes', function (
         'count_available' => 5,
     ]);
 
-    $this->get(route('home', [
+    $this->actingAs($admin)->post(route('flight-search.search'), [
         'origin_airport_id' => $origin->id,
         'destination_airport_id' => $destination->id,
         'trip_type' => 'one_way',
@@ -98,7 +100,7 @@ test('full search shows every fare class including sold out classes', function (
         'adults' => 1,
         'children' => 0,
         'babies' => 0,
-    ]))
+    ])
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('flight-search')
@@ -126,7 +128,7 @@ test('round trip search returns outbound and return legs', function () {
         'flight_number' => 'DP301',
     ]);
 
-    $this->get(route('home', [
+    $this->post(route('flight-search.search'), [
         'origin_airport_id' => $origin->id,
         'destination_airport_id' => $destination->id,
         'trip_type' => 'round_trip',
@@ -136,7 +138,7 @@ test('round trip search returns outbound and return legs', function () {
         'adults' => 1,
         'children' => 0,
         'babies' => 0,
-    ]))
+    ])
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('results.outbound.0.flight_number', 'DP300')
@@ -170,7 +172,7 @@ test('round trip search uses discounted round trip booking letters', function ()
         'count_available' => 4,
     ]);
 
-    $this->get(route('home', [
+    $this->post(route('flight-search.search'), [
         'origin_airport_id' => $origin->id,
         'destination_airport_id' => $destination->id,
         'trip_type' => 'round_trip',
@@ -180,7 +182,7 @@ test('round trip search uses discounted round trip booking letters', function ()
         'adults' => 1,
         'children' => 0,
         'babies' => 0,
-    ]))
+    ])
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('results.outbound.0.fares.A.available', true)
@@ -193,7 +195,7 @@ test('round trip search uses discounted round trip booking letters', function ()
 test('origin and destination must be different', function () {
     $airport = Airport::factory()->create(['code' => 'IST']);
 
-    $this->from(route('home'))->get(route('home', [
+    $this->from(route('home'))->post(route('flight-search.search'), [
         'origin_airport_id' => $airport->id,
         'destination_airport_id' => $airport->id,
         'trip_type' => 'one_way',
@@ -202,9 +204,44 @@ test('origin and destination must be different', function () {
         'adults' => 1,
         'children' => 0,
         'babies' => 0,
-    ]))
+    ])
         ->assertRedirect(route('home'))
         ->assertSessionHasErrors('destination_airport_id');
+});
+
+test('non admins cannot use full search mode', function () {
+    [$origin, $destination] = createAirportPair();
+    $flight = Flight::factory()->create([
+        'origin_airport_id' => $origin->id,
+        'destination_airport_id' => $destination->id,
+        'date' => '2026-08-01',
+        'flight_number' => 'DP500',
+    ]);
+
+    Availability::factory()->create([
+        'flight_id' => $flight->id,
+        'class_letters' => 'A',
+        'fare_type' => 'one_way',
+        'base_price_usd' => 120,
+        'count_available' => 4,
+    ]);
+
+    $this->post(route('flight-search.search'), [
+        'origin_airport_id' => $origin->id,
+        'destination_airport_id' => $destination->id,
+        'trip_type' => 'one_way',
+        'depart_date' => '2026-08-01',
+        'search_mode' => 'full',
+        'adults' => 1,
+        'children' => 0,
+        'babies' => 0,
+    ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('canUseFullSearch', false)
+            ->where('filters.search_mode', 'basic')
+            ->where('results.outbound.0.fares.A.available', true),
+        );
 });
 
 /**

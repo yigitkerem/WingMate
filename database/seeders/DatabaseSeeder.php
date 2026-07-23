@@ -17,7 +17,7 @@ class DatabaseSeeder extends Seeder
     {
         User::query()->updateOrCreate(
             ['email' => 'test@example.com'],
-            ['name' => 'Test User', 'password' => 'password'],
+            ['name' => 'Test User', 'password' => 'password', 'is_admin' => true],
         );
 
         $this->call(AirlineDemoSeeder::class);

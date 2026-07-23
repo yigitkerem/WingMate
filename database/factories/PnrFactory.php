@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Pnr;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,6 +19,7 @@ class PnrFactory extends Factory
     public function definition(): array
     {
         return [
+            'user_id' => User::factory(),
             'first_name' => fake()->firstName(),
             'last_name' => fake()->lastName(),
             'passport_number' => strtoupper(fake()->bothify('??#######')),

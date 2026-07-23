@@ -71,7 +71,19 @@ type Props = {
     airports: Airport[];
     filters: Filters;
     results: Results;
+    canUseFullSearch: boolean;
+    customer: {
+        isAuthenticated: boolean;
+        isAdmin: boolean;
+        firstName: string;
+        lastName: string;
+    };
     errors?: Record<string, string>;
+};
+
+type PurchaseTarget = {
+    flight: FlightResult;
+    fare: Fare;
 };
 
 const inputClass =
@@ -80,8 +92,43 @@ const inputClass =
 const controlClass =
     'h-12 border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-zinc-500 focus:border-red-600';
 
-export default function FlightSearch({ airports, filters, results, errors = {} }: Props) {
+function AirportBackground() {
+    return (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div
+                className="absolute inset-0 bg-cover bg-center opacity-20"
+                style={{
+                    backgroundImage:
+                        "url('https://unsplash.com/photos/GsVO12cQrzA/download?force=true&w=1800')",
+                }}
+            />
+            <div className="absolute inset-0 bg-zinc-100/80" />
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(39,39,42,0.055)_1px,transparent_1px),linear-gradient(0deg,rgba(39,39,42,0.045)_1px,transparent_1px)] bg-[size:72px_72px]" />
+            <div className="absolute top-20 left-[8%] h-px w-[78%] rotate-[-8deg] bg-red-700/20" />
+            <div className="absolute top-56 left-[18%] h-px w-[58%] rotate-[12deg] bg-zinc-700/15" />
+            <div className="absolute right-[10%] bottom-32 h-px w-[46%] rotate-[-18deg] bg-red-700/15" />
+            <div className="absolute top-16 right-[17%] size-2 border border-red-700 bg-white" />
+            <div className="absolute top-48 left-[13%] size-2 border border-zinc-700 bg-white" />
+            <div className="absolute right-[27%] bottom-44 size-2 border border-red-700 bg-white" />
+            <div className="absolute -right-28 top-28 h-80 w-80 border border-zinc-300/70" />
+            <div className="absolute -left-20 bottom-12 h-64 w-64 border border-zinc-300/70" />
+        </div>
+    );
+}
+
+export default function FlightSearch({
+    airports,
+    filters,
+    results,
+    canUseFullSearch,
+    customer,
+    errors = {},
+}: Props) {
     const [form, setForm] = useState<Filters>(filters);
+    const [openPanel, setOpenPanel] = useState<string | null>(null);
+    const [purchaseTarget, setPurchaseTarget] = useState<PurchaseTarget | null>(
+        null,
+    );
 
     function update<K extends keyof Filters>(key: K, value: Filters[K]) {
         setForm((current) => ({ ...current, [key]: value }));
@@ -90,15 +137,17 @@ export default function FlightSearch({ airports, filters, results, errors = {} }
     function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
 
-        router.get(
-            '/',
+        router.post(
+            '/search',
             {
                 ...form,
+                search_mode: canUseFullSearch ? form.search_mode : 'basic',
                 return_date:
                     form.trip_type === 'round_trip' ? form.return_date : undefined,
             },
             {
                 preserveScroll: true,
+                onStart: () => setOpenPanel(null),
             },
         );
     }
@@ -106,8 +155,9 @@ export default function FlightSearch({ airports, filters, results, errors = {} }
     return (
         <>
             <Head title="Airline Price Search" />
-            <main className="min-h-screen bg-zinc-100 font-sans text-zinc-950">
-                <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
+            <main className="relative min-h-screen overflow-hidden bg-zinc-100 font-sans text-zinc-950">
+                <AirportBackground />
+                <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
                     <header className="flex flex-col justify-between gap-3 border-b border-zinc-300 pb-5 sm:flex-row sm:items-end">
                         <div>
                             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-normal text-red-700">
@@ -118,102 +168,259 @@ export default function FlightSearch({ airports, filters, results, errors = {} }
                                 Price search
                             </h1>
                         </div>
-                        <a
-                            className="inline-flex h-10 items-center justify-center border border-zinc-950 px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
-                            href="/admin"
-                        >
-                            Admin
-                        </a>
+                        <nav className="flex flex-wrap gap-2">
+                            {!customer.isAuthenticated && (
+                                <>
+                                    <a
+                                        className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                                        href="/register"
+                                    >
+                                        Sign up
+                                    </a>
+                                    <a
+                                        className="inline-flex h-10 items-center justify-center border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                                        href="/login"
+                                    >
+                                        Log in
+                                    </a>
+                                </>
+                            )}
+                            {customer.isAdmin && (
+                                <a
+                                    className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-medium text-zinc-950 outline-none transition-colors hover:border-red-700 hover:text-red-700 focus:border-red-600"
+                                    href="/admin"
+                                >
+                                    Admin
+                                </a>
+                            )}
+                        </nav>
                     </header>
 
                     <form
                         onSubmit={submit}
-                        className="border border-zinc-300 bg-white p-4 sm:p-5"
+                        className="border border-zinc-300 bg-white/95 p-4 shadow-[0_12px_40px_rgba(24,24,27,0.08)] sm:p-5"
                     >
-                        <div className="grid gap-4 lg:grid-cols-[1.3fr_1.3fr_1fr_1fr]">
-                            <SearchableAirport
-                                airports={airports}
-                                label="Origin"
-                                value={form.origin_airport_id}
-                                error={errors.origin_airport_id}
-                                onChange={(id) => update('origin_airport_id', id)}
-                            />
-                            <SearchableAirport
-                                airports={airports}
-                                label="Destination"
-                                value={form.destination_airport_id}
-                                error={errors.destination_airport_id}
-                                onChange={(id) =>
-                                    update('destination_airport_id', id)
-                                }
-                            />
-                            <SegmentedControl
-                                label="Trip"
-                                value={form.trip_type}
-                                options={[
-                                    ['one_way', 'One way'],
-                                    ['round_trip', 'Round trip'],
-                                ]}
-                                onChange={(value) =>
-                                    update(
-                                        'trip_type',
-                                        value as Filters['trip_type'],
-                                    )
-                                }
-                            />
-                            <SegmentedControl
-                                label="Mode"
-                                value={form.search_mode}
-                                options={[
-                                    ['basic', 'Basic'],
-                                    ['full', 'Full'],
-                                ]}
-                                onChange={(value) =>
-                                    update(
-                                        'search_mode',
-                                        value as Filters['search_mode'],
-                                    )
-                                }
-                            />
-                        </div>
-
-                        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
-                            <DatePicker
-                                label="Depart"
-                                value={form.depart_date}
-                                error={errors.depart_date}
-                                onChange={(date) => update('depart_date', date)}
-                            />
-                            <DatePicker
-                                disabled={form.trip_type === 'one_way'}
-                                label="Return"
-                                value={form.return_date}
-                                error={errors.return_date}
-                                onChange={(date) => update('return_date', date)}
-                            />
-                            <PassengerPicker
-                                adults={form.adults}
-                                children={form.children}
-                                babies={form.babies}
-                                errors={errors}
-                                onChange={(key, value) => update(key, value)}
-                            />
-                            <div className="flex items-end">
-                                <button
-                                    type="submit"
-                                    className="inline-flex h-12 w-full items-center justify-center gap-2 border border-red-700 bg-red-700 px-6 text-sm font-semibold text-white outline-none transition-colors hover:bg-red-800 focus:border-zinc-950 lg:w-auto"
-                                >
-                                    <Search className="size-4" />
-                                    Search
-                                </button>
+                        <div className="grid gap-4">
+                            <div className="grid gap-4 lg:grid-cols-[1.3fr_1.3fr_1fr_1fr]">
+                                <SearchableAirport
+                                    airports={airports}
+                                    label="Origin"
+                                    value={form.origin_airport_id}
+                                    error={errors.origin_airport_id}
+                                    isOpen={openPanel === 'origin'}
+                                    onToggle={() =>
+                                        setOpenPanel(
+                                            openPanel === 'origin' ? null : 'origin',
+                                        )
+                                    }
+                                    onClose={() => setOpenPanel(null)}
+                                    onChange={(id) =>
+                                        update('origin_airport_id', id)
+                                    }
+                                />
+                                <SearchableAirport
+                                    airports={airports}
+                                    label="Destination"
+                                    value={form.destination_airport_id}
+                                    error={errors.destination_airport_id}
+                                    isOpen={openPanel === 'destination'}
+                                    onToggle={() =>
+                                        setOpenPanel(
+                                            openPanel === 'destination'
+                                                ? null
+                                                : 'destination',
+                                        )
+                                    }
+                                    onClose={() => setOpenPanel(null)}
+                                    onChange={(id) =>
+                                        update('destination_airport_id', id)
+                                    }
+                                />
+                                <SegmentedControl
+                                    label="Trip"
+                                    value={form.trip_type}
+                                    options={[
+                                        ['one_way', 'One way'],
+                                        ['round_trip', 'Round trip'],
+                                    ]}
+                                    onChange={(value) =>
+                                        update(
+                                            'trip_type',
+                                            value as Filters['trip_type'],
+                                        )
+                                    }
+                                />
+                                {canUseFullSearch ? (
+                                    <SegmentedControl
+                                        label="Mode"
+                                        value={form.search_mode}
+                                        options={[
+                                            ['basic', 'Basic'],
+                                            ['full', 'Full'],
+                                        ]}
+                                        onChange={(value) =>
+                                            update(
+                                                'search_mode',
+                                                value as Filters['search_mode'],
+                                            )
+                                        }
+                                    />
+                                ) : (
+                                    <div className="flex flex-col gap-2">
+                                        <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
+                                            Mode
+                                        </span>
+                                        <div className="flex h-12 items-center border border-zinc-300 bg-zinc-100 px-3 text-sm font-medium text-zinc-600">
+                                            Basic
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
+                                <DatePicker
+                                    label="Depart"
+                                    value={form.depart_date}
+                                    error={errors.depart_date}
+                                    isOpen={openPanel === 'depart'}
+                                    onToggle={() =>
+                                        setOpenPanel(
+                                            openPanel === 'depart' ? null : 'depart',
+                                        )
+                                    }
+                                    onClose={() => setOpenPanel(null)}
+                                    onChange={(date) => update('depart_date', date)}
+                                />
+                                <DatePicker
+                                    disabled={form.trip_type === 'one_way'}
+                                    label="Return"
+                                    value={form.return_date}
+                                    error={errors.return_date}
+                                    isOpen={openPanel === 'return'}
+                                    onToggle={() =>
+                                        setOpenPanel(
+                                            openPanel === 'return' ? null : 'return',
+                                        )
+                                    }
+                                    onClose={() => setOpenPanel(null)}
+                                    onChange={(date) => update('return_date', date)}
+                                />
+                                <PassengerPicker
+                                    adults={form.adults}
+                                    children={form.children}
+                                    babies={form.babies}
+                                    errors={errors}
+                                    isOpen={openPanel === 'passengers'}
+                                    onToggle={() =>
+                                        setOpenPanel(
+                                            openPanel === 'passengers'
+                                                ? null
+                                                : 'passengers',
+                                        )
+                                    }
+                                    onChange={(key, value) => update(key, value)}
+                                />
+                                <div className="flex items-end">
+                                    <button
+                                        type="submit"
+                                        className="inline-flex h-12 w-full items-center justify-center gap-2 border border-red-700 bg-red-700 px-6 text-sm font-semibold text-white outline-none transition-colors hover:bg-red-800 focus:border-zinc-950 lg:w-auto"
+                                    >
+                                        <Search className="size-4" />
+                                        Search
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </form>
 
-                    <ResultsPanel mode={form.search_mode} results={results} />
+                    <OfferCarousel />
+
+                    <ResultsPanel
+                        mode={canUseFullSearch ? form.search_mode : 'basic'}
+                        results={results}
+                        onPurchase={(flight, fare) =>
+                            setPurchaseTarget({ flight, fare })
+                        }
+                    />
                 </div>
+                {purchaseTarget && (
+                    <PurchaseModal
+                        key={purchaseTarget.fare.id}
+                        target={purchaseTarget}
+                        filters={form}
+                        customer={customer}
+                        errors={errors}
+                        onClose={() => setPurchaseTarget(null)}
+                    />
+                )}
             </main>
         </>
+    );
+}
+
+function OfferCarousel() {
+    const offers = [
+        {
+            route: 'IST to LHR',
+            date: 'Aug 6',
+            price: '$158',
+            image: 'https://unsplash.com/photos/S3N2cPMWhEA/download?force=true&w=900',
+        },
+        {
+            route: 'AMS to IST',
+            date: 'Aug 9',
+            price: '$132',
+            image: 'https://unsplash.com/photos/GsVO12cQrzA/download?force=true&w=900',
+        },
+        {
+            route: 'IST to CDG',
+            date: 'Aug 12',
+            price: '$145',
+            image: 'https://unsplash.com/photos/RduE7aSO2SA/download?force=true&w=900',
+        },
+        {
+            route: 'FRA to JFK',
+            date: 'Aug 18',
+            price: '$516',
+            image: 'https://unsplash.com/photos/GsVO12cQrzA/download?force=true&w=900',
+        },
+    ];
+
+    return (
+        <section className="border border-zinc-300 bg-white/95 p-4">
+            <div className="mb-3 flex items-end justify-between gap-4">
+                <div>
+                    <h2 className="text-lg font-semibold">Cheap dates</h2>
+                    <p className="text-sm text-zinc-600">
+                        Highlighted low-fare travel windows.
+                    </p>
+                </div>
+            </div>
+            <div className="flex snap-x gap-3 overflow-x-auto pb-1">
+                {offers.map((offer) => (
+                    <article
+                        key={`${offer.route}-${offer.date}`}
+                        className="relative h-40 min-w-[260px] snap-start overflow-hidden border border-zinc-300 bg-zinc-900 text-white"
+                    >
+                        <div
+                            className="absolute inset-0 bg-cover bg-center opacity-65"
+                            style={{ backgroundImage: `url('${offer.image}')` }}
+                        />
+                        <div className="absolute inset-0 bg-linear-to-t from-zinc-950 via-zinc-950/30 to-transparent" />
+                        <div className="relative flex h-full flex-col justify-end p-4">
+                            <div className="text-sm font-medium">{offer.date}</div>
+                            <div className="mt-1 flex items-end justify-between gap-4">
+                                <div className="text-xl font-semibold">
+                                    {offer.route}
+                                </div>
+                                <div className="text-2xl font-semibold text-white">
+                                    {offer.price}
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                ))}
+            </div>
+        </section>
     );
 }
 
@@ -222,15 +429,20 @@ function SearchableAirport({
     label,
     value,
     error,
+    isOpen,
+    onToggle,
+    onClose,
     onChange,
 }: {
     airports: Airport[];
     label: string;
     value: number | null;
     error?: string;
+    isOpen: boolean;
+    onToggle: () => void;
+    onClose: () => void;
     onChange: (id: number) => void;
 }) {
-    const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState('');
     const selected = airports.find((airport) => airport.id === value);
     const filtered = airports.filter((airport) => {
@@ -247,7 +459,7 @@ function SearchableAirport({
             <button
                 type="button"
                 className={`${inputClass} flex items-center justify-between gap-3`}
-                onClick={() => setIsOpen((open) => !open)}
+                onClick={onToggle}
             >
                 <span className={selected ? 'text-zinc-950' : 'text-zinc-500'}>
                     {selected
@@ -273,7 +485,7 @@ function SearchableAirport({
                                 className="flex w-full items-center justify-between border-t border-zinc-200 px-3 py-3 text-left text-sm outline-none hover:bg-zinc-100 focus:bg-red-50"
                                 onClick={() => {
                                     onChange(airport.id);
-                                    setIsOpen(false);
+                                    onClose();
                                     setQuery('');
                                 }}
                             >
@@ -332,15 +544,20 @@ function DatePicker({
     value,
     disabled = false,
     error,
+    isOpen,
+    onToggle,
+    onClose,
     onChange,
 }: {
     label: string;
     value: string;
     disabled?: boolean;
     error?: string;
+    isOpen: boolean;
+    onToggle: () => void;
+    onClose: () => void;
     onChange: (date: string) => void;
 }) {
-    const [isOpen, setIsOpen] = useState(false);
     const [month, setMonth] = useState(() => startOfMonth(parseDate(value)));
     const days = useMemo(() => calendarDays(month), [month]);
 
@@ -353,7 +570,7 @@ function DatePicker({
                 type="button"
                 disabled={disabled}
                 className={`${inputClass} flex items-center justify-between gap-3 disabled:bg-zinc-100 disabled:text-zinc-400`}
-                onClick={() => setIsOpen((open) => !open)}
+                onClick={onToggle}
             >
                 <span>{formatDisplayDate(value)}</span>
                 <CalendarDays className="size-4 text-zinc-500" />
@@ -411,7 +628,7 @@ function DatePicker({
                                     }`}
                                     onClick={() => {
                                         onChange(iso);
-                                        setIsOpen(false);
+                                        onClose();
                                     }}
                                 >
                                     {day.date.getDate()}
@@ -431,20 +648,24 @@ function PassengerPicker({
     children,
     babies,
     errors,
+    isOpen,
+    onToggle,
     onChange,
 }: {
     adults: number;
     children: number;
     babies: number;
     errors: Record<string, string>;
+    isOpen: boolean;
+    onToggle: () => void;
     onChange: (
         key: 'adults' | 'children' | 'babies',
         value: number,
     ) => void;
 }) {
-    const [isOpen, setIsOpen] = useState(false);
     const total = adults + children + babies;
     const label = `${total} ${total === 1 ? 'Passenger' : 'Passengers'}`;
+    const maxPassengers = 9;
 
     return (
         <div className="relative flex flex-col gap-2">
@@ -454,7 +675,7 @@ function PassengerPicker({
             <button
                 type="button"
                 className={`${inputClass} flex items-center justify-between gap-3`}
-                onClick={() => setIsOpen((open) => !open)}
+                onClick={onToggle}
             >
                 <span>{label}</span>
                 <Users className="size-4 text-zinc-500" />
@@ -466,21 +687,39 @@ function PassengerPicker({
                         label="Adult"
                         value={adults}
                         min={1}
-                        onChange={(value) => onChange('adults', value)}
+                        max={maxPassengers - children - babies}
+                        onChange={(value) =>
+                            onChange(
+                                'adults',
+                                clamp(value, 1, maxPassengers - children - babies),
+                            )
+                        }
                     />
                     <PassengerRow
                         icon={<Users className="size-4" />}
                         label="Child"
                         value={children}
                         min={0}
-                        onChange={(value) => onChange('children', value)}
+                        max={maxPassengers - adults - babies}
+                        onChange={(value) =>
+                            onChange(
+                                'children',
+                                clamp(value, 0, maxPassengers - adults - babies),
+                            )
+                        }
                     />
                     <PassengerRow
                         icon={<Baby className="size-4" />}
                         label="Baby"
                         value={babies}
                         min={0}
-                        onChange={(value) => onChange('babies', value)}
+                        max={maxPassengers - adults - children}
+                        onChange={(value) =>
+                            onChange(
+                                'babies',
+                                clamp(value, 0, maxPassengers - adults - children),
+                            )
+                        }
                     />
                 </div>
             )}
@@ -498,12 +737,14 @@ function PassengerRow({
     label,
     value,
     min,
+    max,
     onChange,
 }: {
     icon: ReactNode;
     label: string;
     value: number;
     min: number;
+    max: number;
     onChange: (value: number) => void;
 }) {
     return (
@@ -526,7 +767,8 @@ function PassengerRow({
                 </span>
                 <button
                     type="button"
-                    className="grid size-9 place-items-center outline-none hover:bg-zinc-100 focus:border focus:border-red-600"
+                    className="grid size-9 place-items-center outline-none hover:bg-zinc-100 focus:border focus:border-red-600 disabled:text-zinc-300"
+                    disabled={value >= max}
                     onClick={() => onChange(value + 1)}
                 >
                     <Plus className="size-4" />
@@ -539,9 +781,11 @@ function PassengerRow({
 function ResultsPanel({
     mode,
     results,
+    onPurchase,
 }: {
     mode: Filters['search_mode'];
     results: Results;
+    onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
     if (!results) {
         return (
@@ -558,6 +802,7 @@ function ResultsPanel({
                 title="Outbound"
                 flights={results.outbound}
                 seatPassengers={results.seat_passengers}
+                onPurchase={onPurchase}
             />
             {results.return.length > 0 && (
                 <FlightLeg
@@ -565,6 +810,7 @@ function ResultsPanel({
                     title="Return"
                     flights={results.return}
                     seatPassengers={results.seat_passengers}
+                    onPurchase={onPurchase}
                 />
             )}
         </div>
@@ -576,11 +822,13 @@ function FlightLeg({
     mode,
     flights,
     seatPassengers,
+    onPurchase,
 }: {
     title: string;
     mode: Filters['search_mode'];
     flights: FlightResult[];
     seatPassengers: number;
+    onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
     return (
         <section className="border border-zinc-300 bg-white">
@@ -602,6 +850,7 @@ function FlightLeg({
                             mode={mode}
                             flight={flight}
                             seatPassengers={seatPassengers}
+                            onPurchase={onPurchase}
                         />
                     ))}
                 </div>
@@ -614,10 +863,12 @@ function FlightRow({
     flight,
     mode,
     seatPassengers,
+    onPurchase,
 }: {
     flight: FlightResult;
     mode: Filters['search_mode'];
     seatPassengers: number;
+    onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
     return (
         <article className="grid gap-4 p-4 xl:grid-cols-[280px_1fr]">
@@ -641,18 +892,32 @@ function FlightRow({
                 </div>
             </div>
             {mode === 'basic' ? (
-                <BasicFares fares={flight.fares as Record<'A' | 'B' | 'C', Fare>} />
+                <BasicFares
+                    fares={flight.fares as Record<'A' | 'B' | 'C', Fare>}
+                    flight={flight}
+                    onPurchase={onPurchase}
+                />
             ) : (
                 <FullFares
                     fares={flight.fares as Fare[]}
                     seatPassengers={seatPassengers}
+                    flight={flight}
+                    onPurchase={onPurchase}
                 />
             )}
         </article>
     );
 }
 
-function BasicFares({ fares }: { fares: Record<'A' | 'B' | 'C', Fare> }) {
+function BasicFares({
+    fares,
+    flight,
+    onPurchase,
+}: {
+    fares: Record<'A' | 'B' | 'C', Fare>;
+    flight: FlightResult;
+    onPurchase: (flight: FlightResult, fare: Fare) => void;
+}) {
     return (
         <div className="grid gap-3 md:grid-cols-3">
             {(['A', 'B', 'C'] as const).map((classLetter) => {
@@ -680,6 +945,13 @@ function BasicFares({ fares }: { fares: Record<'A' | 'B' | 'C', Fare> }) {
                                     ${fare.base_price_usd}
                                 </div>
                                 <FareTerms fare={fare} compact />
+                                <button
+                                    type="button"
+                                    className="mt-4 h-10 w-full border border-red-700 bg-red-700 text-sm font-semibold text-white outline-none hover:bg-red-800 focus:border-zinc-950"
+                                    onClick={() => onPurchase(flight, fare)}
+                                >
+                                    Buy
+                                </button>
                             </>
                         ) : (
                             <div className="mt-3 text-sm text-zinc-500">
@@ -696,9 +968,13 @@ function BasicFares({ fares }: { fares: Record<'A' | 'B' | 'C', Fare> }) {
 function FullFares({
     fares,
     seatPassengers,
+    flight,
+    onPurchase,
 }: {
     fares: Fare[];
     seatPassengers: number;
+    flight: FlightResult;
+    onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
     return (
         <div className="overflow-x-auto border border-zinc-200">
@@ -728,6 +1004,9 @@ function FullFares({
                         </th>
                         <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
                             Refund
+                        </th>
+                        <th className="border-b border-zinc-300 px-3 py-3 font-semibold">
+                            Buy
                         </th>
                     </tr>
                 </thead>
@@ -773,6 +1052,16 @@ function FullFares({
                                     fare.latest_refund_hours,
                                 )}
                             </td>
+                            <td className="border-b border-zinc-200 px-3 py-3">
+                                <button
+                                    type="button"
+                                    disabled={!fare.available}
+                                    className="h-9 border border-red-700 bg-red-700 px-4 text-sm font-semibold text-white outline-none hover:bg-red-800 focus:border-zinc-950 disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-400"
+                                    onClick={() => onPurchase(flight, fare)}
+                                >
+                                    Buy
+                                </button>
+                            </td>
                         </tr>
                     ))}
                 </tbody>
@@ -798,6 +1087,170 @@ function FareTerms({ fare, compact = false }: { fare: Fare; compact?: boolean })
             </span>
             <span>{feeLabel(fare.change_fee_usd!, fare.latest_change_hours)}</span>
             <span>{feeLabel(fare.refund_fee_usd!, fare.latest_refund_hours)}</span>
+        </div>
+    );
+}
+
+function PurchaseModal({
+    target,
+    filters,
+    customer,
+    errors,
+    onClose,
+}: {
+    target: PurchaseTarget;
+    filters: Filters;
+    customer: Props['customer'];
+    errors: Record<string, string>;
+    onClose: () => void;
+}) {
+    const [buyer, setBuyer] = useState({
+        first_name: customer.firstName,
+        last_name: customer.lastName,
+        passport_number: '',
+    });
+    const seatPassengers = filters.adults + filters.children;
+    const totalPrice = (target.fare.base_price_usd ?? 0) * seatPassengers;
+
+    function submit(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+
+        router.post(
+            '/purchase',
+            {
+                availability_id: target.fare.id,
+                first_name: buyer.first_name,
+                last_name: buyer.last_name,
+                passport_number: buyer.passport_number,
+                adults: filters.adults,
+                children: filters.children,
+                babies: filters.babies,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: onClose,
+            },
+        );
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4">
+            <form
+                onSubmit={submit}
+                className="w-full max-w-xl border border-zinc-950 bg-white p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)]"
+            >
+                <div className="flex items-start justify-between gap-4 border-b border-zinc-300 pb-4">
+                    <div>
+                        <h2 className="text-xl font-semibold">Buy ticket</h2>
+                        <p className="mt-1 text-sm text-zinc-600">
+                            {target.flight.flight_number} ·{' '}
+                            {target.flight.origin.code} to{' '}
+                            {target.flight.destination.code} ·{' '}
+                            {target.fare.class_letters}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        className="border border-zinc-300 px-3 py-2 text-sm font-medium outline-none hover:border-red-700 focus:border-red-600"
+                        onClick={onClose}
+                    >
+                        Close
+                    </button>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
+                            First name
+                        </span>
+                        <input
+                            className={inputClass}
+                            value={buyer.first_name}
+                            onChange={(event) =>
+                                setBuyer((current) => ({
+                                    ...current,
+                                    first_name: event.target.value,
+                                }))
+                            }
+                        />
+                        {errors.first_name && (
+                            <span className="text-xs text-red-700">
+                                {errors.first_name}
+                            </span>
+                        )}
+                    </label>
+                    <label className="flex flex-col gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
+                            Last name
+                        </span>
+                        <input
+                            className={inputClass}
+                            value={buyer.last_name}
+                            onChange={(event) =>
+                                setBuyer((current) => ({
+                                    ...current,
+                                    last_name: event.target.value,
+                                }))
+                            }
+                        />
+                        {errors.last_name && (
+                            <span className="text-xs text-red-700">
+                                {errors.last_name}
+                            </span>
+                        )}
+                    </label>
+                    <label className="flex flex-col gap-2 sm:col-span-2">
+                        <span className="text-xs font-semibold uppercase tracking-normal text-zinc-600">
+                            Passport number
+                        </span>
+                        <input
+                            className={inputClass}
+                            value={buyer.passport_number}
+                            onChange={(event) =>
+                                setBuyer((current) => ({
+                                    ...current,
+                                    passport_number: event.target.value,
+                                }))
+                            }
+                        />
+                        {errors.passport_number && (
+                            <span className="text-xs text-red-700">
+                                {errors.passport_number}
+                            </span>
+                        )}
+                    </label>
+                </div>
+
+                <div className="mt-5 border border-zinc-300 bg-zinc-100 p-3 text-sm">
+                    <div className="flex justify-between gap-4">
+                        <span>Seated passengers</span>
+                        <span className="font-semibold">{seatPassengers}</span>
+                    </div>
+                    <div className="mt-2 flex justify-between gap-4">
+                        <span>Fare</span>
+                        <span className="font-semibold">
+                            ${target.fare.base_price_usd} × {seatPassengers}
+                        </span>
+                    </div>
+                    <div className="mt-3 flex justify-between gap-4 border-t border-zinc-300 pt-3 text-base">
+                        <span className="font-semibold">Total</span>
+                        <span className="font-semibold">${totalPrice}</span>
+                    </div>
+                </div>
+
+                {errors.availability_id && (
+                    <div className="mt-4 border border-red-700 bg-red-50 p-3 text-sm font-medium text-red-700">
+                        {errors.availability_id}
+                    </div>
+                )}
+
+                <button
+                    type="submit"
+                    className="mt-5 h-12 w-full border border-red-700 bg-red-700 text-sm font-semibold text-white outline-none hover:bg-red-800 focus:border-zinc-950"
+                >
+                    Confirm purchase
+                </button>
+            </form>
         </div>
     );
 }
@@ -859,4 +1312,8 @@ function formatDisplayDate(value: string) {
         day: 'numeric',
         year: 'numeric',
     });
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), Math.max(min, max));
 }

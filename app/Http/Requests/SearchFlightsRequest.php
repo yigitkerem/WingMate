@@ -53,6 +53,14 @@ class SearchFlightsRequest extends FormRequest
                 if ($this->integer('origin_airport_id') === $this->integer('destination_airport_id')) {
                     $validator->errors()->add('destination_airport_id', 'Choose a different destination.');
                 }
+
+                if (($this->integer('adults') + $this->integer('children')) > 9) {
+                    $validator->errors()->add('adults', 'Search up to 9 seated passengers.');
+                }
+
+                if (($this->integer('adults') + $this->integer('children') + $this->integer('babies')) > 9) {
+                    $validator->errors()->add('babies', 'Search up to 9 passengers total.');
+                }
             },
         ];
     }
