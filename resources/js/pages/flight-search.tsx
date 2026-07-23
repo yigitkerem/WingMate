@@ -357,7 +357,6 @@ export default function FlightSearch({
                     {!results && <OfferCarousel />}
 
                     <ResultsPanel
-                        mode={canUseFullSearch ? form.search_mode : 'basic'}
                         results={results}
                         onPurchase={(flight, fare) =>
                             setPurchaseTarget({ flight, fare })
@@ -974,11 +973,9 @@ function PassengerRow({
 }
 
 function ResultsPanel({
-    mode,
     results,
     onPurchase,
 }: {
-    mode: Filters['search_mode'];
     results: Results;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
@@ -993,7 +990,6 @@ function ResultsPanel({
     return (
         <div className="grid gap-6">
             <FlightLeg
-                mode={mode}
                 title="Outbound"
                 flights={results.outbound}
                 seatPassengers={results.seat_passengers}
@@ -1001,7 +997,6 @@ function ResultsPanel({
             />
             {results.return.length > 0 && (
                 <FlightLeg
-                    mode={mode}
                     title="Return"
                     flights={results.return}
                     seatPassengers={results.seat_passengers}
@@ -1014,13 +1009,11 @@ function ResultsPanel({
 
 function FlightLeg({
     title,
-    mode,
     flights,
     seatPassengers,
     onPurchase,
 }: {
     title: string;
-    mode: Filters['search_mode'];
     flights: FlightResult[];
     seatPassengers: number;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
@@ -1042,7 +1035,6 @@ function FlightLeg({
                     {flights.map((flight) => (
                         <FlightRow
                             key={flight.id}
-                            mode={mode}
                             flight={flight}
                             seatPassengers={seatPassengers}
                             onPurchase={onPurchase}
@@ -1056,15 +1048,15 @@ function FlightLeg({
 
 function FlightRow({
     flight,
-    mode,
     seatPassengers,
     onPurchase,
 }: {
     flight: FlightResult;
-    mode: Filters['search_mode'];
     seatPassengers: number;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
+    const hasFullFareMatrix = Array.isArray(flight.fares);
+
     return (
         <article className="grid gap-4 p-4 xl:grid-cols-[280px_1fr]">
             <div className="border border-zinc-200 p-3">
@@ -1086,16 +1078,16 @@ function FlightRow({
                     {flight.plane_model}
                 </div>
             </div>
-            {mode === 'basic' ? (
-                <BasicFares
-                    fares={flight.fares as Record<'A' | 'B' | 'C', Fare>}
+            {hasFullFareMatrix ? (
+                <FullFares
+                    fares={flight.fares}
+                    seatPassengers={seatPassengers}
                     flight={flight}
                     onPurchase={onPurchase}
                 />
             ) : (
-                <FullFares
-                    fares={flight.fares as Fare[]}
-                    seatPassengers={seatPassengers}
+                <BasicFares
+                    fares={flight.fares}
                     flight={flight}
                     onPurchase={onPurchase}
                 />
