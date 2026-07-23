@@ -38,6 +38,7 @@ test('flight search page uses airline branding without geometric background grap
         ->toContain('Filter by feature')
         ->toContain('Free seat selection')
         ->toContain('No fares match the selected features.')
+        ->toContain('Array.isArray(flight.fares)')
         ->not->toContain('AV / Official site')
         ->not->toContain('Direct prices in USD')
         ->not->toContain('Dynamic Pricer Air')
