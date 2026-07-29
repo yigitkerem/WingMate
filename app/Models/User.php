@@ -18,6 +18,8 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string $name
  * @property string $email
+ * @property string|null $passport_number
+ * @property string $loyalty_tier
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property bool $is_admin
@@ -28,7 +30,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'is_admin'])]
+#[Fillable(['name', 'email', 'passport_number', 'loyalty_tier', 'password', 'is_admin'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
@@ -40,9 +42,12 @@ class User extends Authenticatable implements FilamentUser
         return $this->is_admin;
     }
 
-    public function pnrs(): HasMany
+    /**
+     * @return HasMany<Order, $this>
+     */
+    public function orders(): HasMany
     {
-        return $this->hasMany(Pnr::class);
+        return $this->hasMany(Order::class);
     }
 
     /**

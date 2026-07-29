@@ -2,6 +2,9 @@ export type User = {
     id: number;
     name: string;
     email: string;
+    passport_number?: string | null;
+    loyalty_tier?: string;
+    is_admin?: boolean;
     avatar?: string;
     email_verified_at: string | null;
     created_at: string;

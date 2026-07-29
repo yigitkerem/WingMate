@@ -1,24 +1,20 @@
 <?php
 
-use App\Models\Airport;
-use App\Models\Availability;
-use App\Models\Flight;
-use App\Models\Pnr;
+use App\Models\Order;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Pricing\OfferBuilder;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
-    $response = $this->get(route('dashboard'));
-    $response->assertRedirect(route('login'));
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
 });
 
 test('authenticated users can visit the dashboard', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
 
-    $response = $this->get(route('dashboard'));
-    $response
+    $this->actingAs($user)
+        ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('dashboard')
@@ -28,30 +24,24 @@ test('authenticated users can visit the dashboard', function () {
         );
 });
 
+test('admin dashboard does not show default panel widgets', function () {
+    $admin = User::factory()->admin()->create();
+
+    $this->actingAs($admin)
+        ->get('/admin')
+        ->assertOk()
+        ->assertDontSee('Welcome')
+        ->assertDontSee('Documentation')
+        ->assertDontSee('GitHub');
+});
+
 test('dashboard shows upcoming and past tickets for the signed in customer', function () {
     $user = User::factory()->create();
     $otherUser = User::factory()->create();
 
-    dashboardTicketForUser($user, [
-        'date' => now()->addDays(5)->toDateString(),
-        'hour' => '10:20',
-        'flight_number' => 'DP321',
-        'flown' => false,
-    ]);
-
-    dashboardTicketForUser($user, [
-        'date' => now()->subDays(3)->toDateString(),
-        'hour' => '18:45',
-        'flight_number' => 'DP654',
-        'flown' => true,
-    ]);
-
-    dashboardTicketForUser($otherUser, [
-        'date' => now()->addDays(7)->toDateString(),
-        'hour' => '07:00',
-        'flight_number' => 'DP999',
-        'flown' => false,
-    ]);
+    dashboardTicketForUser($user, 'TK321', '2026-08-10 10:20', 'issued');
+    dashboardTicketForUser($user, 'TK654', now()->subDays(3)->format('Y-m-d H:i'), 'flown');
+    dashboardTicketForUser($otherUser, 'TK999', '2026-08-12 07:00', 'issued');
 
     $this->actingAs($user)
         ->get(route('dashboard'))
@@ -61,32 +51,34 @@ test('dashboard shows upcoming and past tickets for the signed in customer', fun
             ->where('ticketStats.total', 2)
             ->where('ticketStats.upcoming', 1)
             ->where('ticketStats.past', 1)
-            ->where('tickets.upcoming.0.flight.flight_number', 'DP321')
-            ->where('tickets.past.0.flight.flight_number', 'DP654')
-            ->missing('tickets.upcoming.1'),
+            ->where('tickets.upcoming.0.flight.flight_number', 'TK321')
+            ->where('tickets.past.0.flight.flight_number', 'TK654'),
         );
 });
 
-/**
- * @param  array{date: string, hour: string, flight_number: string, flown: bool}  $flightState
- */
-function dashboardTicketForUser(User $user, array $flightState): Ticket
+function dashboardTicketForUser(User $user, string $flightNumber, string $departureAt, string $status): Ticket
 {
-    $origin = Airport::factory()->create();
-    $destination = Airport::factory()->create();
-    $flight = Flight::factory()->create([
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'date' => $flightState['date'],
-        'hour' => $flightState['hour'],
-        'flight_number' => $flightState['flight_number'],
+    $fixture = createSellablePricingFixture([
+        'flight_number' => $flightNumber,
+        'departure_at' => $departureAt,
     ]);
-    $availability = Availability::factory()->create(['flight_id' => $flight->id]);
-    $pnr = Pnr::factory()->create(['user_id' => $user->id]);
+    $offer = app(OfferBuilder::class)->build($fixture['baseFare'], 1, 0, 0, $user);
+    $order = Order::query()->create([
+        'user_id' => $user->id,
+        'booking_reference' => str_replace('TK', 'BR', $flightNumber),
+        'status' => $status === 'flown' ? 'flown' : 'confirmed',
+        'first_name' => 'Demo',
+        'last_name' => 'Passenger',
+        'passport_number' => $user->passport_number,
+        'total_price' => $offer->total_price,
+    ]);
 
-    return Ticket::factory()->create([
-        'availability_id' => $availability->id,
-        'pnr_id' => $pnr->id,
-        'flown' => $flightState['flown'],
+    return Ticket::query()->create([
+        'order_id' => $order->id,
+        'offer_id' => $offer->id,
+        'ticket_number' => '235'.$flightNumber,
+        'passenger_type' => 'ADT',
+        'status' => $status,
+        'issued_at' => now(),
     ]);
 }

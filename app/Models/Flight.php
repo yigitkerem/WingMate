@@ -13,134 +13,92 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property Carbon $date
- * @property string $hour
+ * @property string $flight_number
  * @property int $origin_airport_id
  * @property int $destination_airport_id
- * @property string $flight_number
- * @property string $plane_model
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
+ * @property Carbon $departure_at
+ * @property Carbon $arrival_at
+ * @property int $duration_minutes
+ * @property string $aircraft_type
+ * @property string $status
  */
-#[Fillable(['date', 'hour', 'origin_airport_id', 'destination_airport_id', 'flight_number', 'plane_model'])]
+#[Fillable([
+    'flight_number',
+    'origin_airport_id',
+    'destination_airport_id',
+    'departure_at',
+    'arrival_at',
+    'duration_minutes',
+    'aircraft_type',
+    'status',
+])]
 class Flight extends Model
 {
     /** @use HasFactory<FlightFactory> */
     use HasFactory;
 
-    public static function defaultAvailabilityForClass(string $class, int $basePriceUsd, string $fareType = 'one_way'): array
+    public static function formatDuration(int $durationMinutes): string
     {
-        $availability = match ($class) {
-            'A' => [
-                'class' => 'Economy Light',
-                'checked_baggage_kg' => 15,
-                'cabin_baggage_kg' => 8,
-                'seat_selection_free' => false,
-                'change_fee_usd' => $basePriceUsd,
-                'refund_fee_usd' => $basePriceUsd,
-                'latest_refund_hours' => null,
-                'latest_change_hours' => null,
-                'class_letters' => 'A',
-                'base_price_usd' => $basePriceUsd,
-                'count_available' => 18,
-            ],
-            'B' => [
-                'class' => 'Economy Flex',
-                'checked_baggage_kg' => 20,
-                'cabin_baggage_kg' => 8,
-                'seat_selection_free' => true,
-                'change_fee_usd' => 30,
-                'refund_fee_usd' => 50,
-                'latest_refund_hours' => 12,
-                'latest_change_hours' => 12,
-                'class_letters' => 'B',
-                'base_price_usd' => $basePriceUsd,
-                'count_available' => 14,
-            ],
-            'C' => [
-                'class' => 'Business',
-                'checked_baggage_kg' => 25,
-                'cabin_baggage_kg' => 8,
-                'seat_selection_free' => true,
-                'change_fee_usd' => 0,
-                'refund_fee_usd' => 0,
-                'latest_refund_hours' => 6,
-                'latest_change_hours' => 6,
-                'class_letters' => 'C',
-                'base_price_usd' => $basePriceUsd,
-                'count_available' => 8,
-            ],
-            default => throw new \InvalidArgumentException("Unsupported booking class [{$class}]."),
-        };
+        $hours = intdiv($durationMinutes, 60);
+        $minutes = $durationMinutes % 60;
 
-        if ($fareType === 'round_trip') {
-            $availability['class'] .= ' Roundtrip';
-            $availability['class_letters'] = "{$class}(R)";
-            $availability['fare_type'] = 'round_trip';
-            $availability['base_price_usd'] = self::roundTripPrice((int) $availability['base_price_usd']);
-        } else {
-            $availability['fare_type'] = 'one_way';
+        if ($hours === 0) {
+            return "{$minutes}m";
         }
 
-        return $availability;
+        return $minutes === 0 ? "{$hours}h" : "{$hours}h {$minutes}m";
     }
 
     /**
-     * @return array<string, array<string, bool|int|string|null>>
+     * @return BelongsTo<Airport, $this>
      */
-    public static function defaultAvailabilityTemplates(int $aPriceUsd, int $bPriceUsd, int $cPriceUsd): array
-    {
-        return [
-            'A' => self::defaultAvailabilityForClass('A', $aPriceUsd),
-            'B' => self::defaultAvailabilityForClass('B', $bPriceUsd),
-            'C' => self::defaultAvailabilityForClass('C', $cPriceUsd),
-        ];
-    }
-
-    /**
-     * @return array<string, array<string, bool|int|string|null>>
-     */
-    public static function roundTripAvailabilityTemplates(int $aPriceUsd, int $bPriceUsd, int $cPriceUsd): array
-    {
-        return [
-            'A' => self::defaultAvailabilityForClass('A', $aPriceUsd, 'round_trip'),
-            'B' => self::defaultAvailabilityForClass('B', $bPriceUsd, 'round_trip'),
-            'C' => self::defaultAvailabilityForClass('C', $cPriceUsd, 'round_trip'),
-        ];
-    }
-
-    public static function roundTripPrice(int $oneWayPriceUsd): int
-    {
-        return (int) round($oneWayPriceUsd * 0.88);
-    }
-
     public function originAirport(): BelongsTo
     {
         return $this->belongsTo(Airport::class, 'origin_airport_id');
     }
 
+    /**
+     * @return BelongsTo<Airport, $this>
+     */
     public function destinationAirport(): BelongsTo
     {
         return $this->belongsTo(Airport::class, 'destination_airport_id');
     }
 
-    public function availabilities(): HasMany
+    /**
+     * @return HasMany<BaseFare, $this>
+     */
+    public function baseFares(): HasMany
     {
-        return $this->hasMany(Availability::class);
+        return $this->hasMany(BaseFare::class);
     }
 
+    /**
+     * @return HasMany<FlightInventory, $this>
+     */
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(FlightInventory::class);
+    }
+
+    /**
+     * @param  Builder<Flight>  $query
+     * @return Builder<Flight>
+     */
     public function scopeForRouteOnDate(Builder $query, int $originAirportId, int $destinationAirportId, string $date): Builder
     {
         return $query
             ->where('origin_airport_id', $originAirportId)
             ->where('destination_airport_id', $destinationAirportId)
-            ->whereDate('date', $date);
+            ->whereDate('departure_at', $date);
     }
 
     protected function casts(): array
     {
         return [
-            'date' => 'date',
+            'departure_at' => 'datetime',
+            'arrival_at' => 'datetime',
+            'duration_minutes' => 'integer',
         ];
     }
 }

@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => env('APP_NAME', 'Dynamic Pricer'),
 
     /*
     |--------------------------------------------------------------------------
@@ -73,8 +73,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | The application locale determines the default locale that will be used
-    | by Laravel's translation / localization methods. This option can be
-    | set to any locale for which you plan to have translation strings.
+    | by the translation and localization methods. This option can be set to
+    | any locale for which you plan to have translation strings.
     |
     */
 
@@ -89,9 +89,9 @@ return [
     | Encryption Key
     |--------------------------------------------------------------------------
     |
-    | This key is utilized by Laravel's encryption services and should be set
-    | to a random, 32 character string to ensure that all encrypted values
-    | are secure. You should do this prior to deploying the application.
+    | This key is utilized by the encryption services and should be set to a
+    | random, 32 character string to ensure that all encrypted values are
+    | secure. You should do this prior to deploying the application.
     |
     */
 
@@ -111,8 +111,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | These configuration options determine the driver used to determine and
-    | manage Laravel's "maintenance mode" status. The "cache" driver will
-    | allow maintenance mode to be controlled across multiple machines.
+    | manage the application's "maintenance mode" status. The "cache" driver
+    | will allow maintenance mode to be controlled across multiple machines.
     |
     | Supported drivers: "file", "cache", "array"
     |

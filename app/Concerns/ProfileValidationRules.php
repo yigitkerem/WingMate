@@ -18,6 +18,8 @@ trait ProfileValidationRules
         return [
             'name' => $this->nameRules(),
             'email' => $this->emailRules($userId),
+            'passport_number' => $this->passportNumberRules($userId),
+            'loyalty_tier' => ['nullable', 'string', Rule::in(['member', 'classic_plus', 'elite', 'elite_plus'])],
         ];
     }
 
@@ -43,6 +45,21 @@ trait ProfileValidationRules
             'string',
             'email',
             'max:255',
+            $userId === null
+                ? Rule::unique(User::class)
+                : Rule::unique(User::class)->ignore($userId),
+        ];
+    }
+
+    /**
+     * @return array<int, ValidationRule|array<mixed>|string>
+     */
+    protected function passportNumberRules(?int $userId = null): array
+    {
+        return [
+            'nullable',
+            'string',
+            'max:32',
             $userId === null
                 ? Rule::unique(User::class)
                 : Rule::unique(User::class)->ignore($userId),

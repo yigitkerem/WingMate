@@ -2,58 +2,42 @@
 
 namespace App\Actions;
 
-use App\Models\Availability;
+use App\Models\BaseFare;
 use App\Models\Flight;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use App\Models\FlightInventory;
+use App\Models\Offer;
+use App\Models\User;
+use App\Pricing\OfferBuilder;
+use Illuminate\Support\Collection;
 
 class SearchFlights
 {
+    public function __construct(private readonly OfferBuilder $offerBuilder) {}
+
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function execute(int $originAirportId, int $destinationAirportId, string $date, string $mode, int $seatPassengers, string $tripType): array
+    public function execute(int $originAirportId, int $destinationAirportId, string $date, string $mode, int $seatPassengers, string $tripType, int $adults = 1, int $children = 0, int $infants = 0, ?User $user = null, int $legIndex = 1): array
     {
-        $fareType = $tripType === 'round_trip' ? 'round_trip' : 'one_way';
-
         $flights = Flight::query()
-            ->select([
-                'id',
-                'date',
-                'hour',
-                'origin_airport_id',
-                'destination_airport_id',
-                'flight_number',
-                'plane_model',
-            ])
+            ->select(['id', 'flight_number', 'origin_airport_id', 'destination_airport_id', 'departure_at', 'arrival_at', 'duration_minutes', 'aircraft_type', 'status'])
             ->forRouteOnDate($originAirportId, $destinationAirportId, $date)
             ->with([
-                'originAirport:id,name,code',
-                'destinationAirport:id,name,code',
-                'availabilities' => fn ($query) => $query
-                    ->select([
-                        'id',
-                        'flight_id',
-                        'class',
-                        'checked_baggage_kg',
-                        'cabin_baggage_kg',
-                        'seat_selection_free',
-                        'change_fee_usd',
-                        'refund_fee_usd',
-                        'latest_refund_hours',
-                        'latest_change_hours',
-                        'class_letters',
-                        'fare_type',
-                        'base_price_usd',
-                        'count_available',
-                    ])
-                    ->where('fare_type', $fareType)
-                    ->orderBy('base_price_usd'),
+                'originAirport:id,name,iata_code',
+                'destinationAirport:id,name,iata_code',
+                'baseFares' => fn ($query) => $query
+                    ->current()
+                    ->where('trip_type', $tripType === 'round_trip' ? 'round_trip' : 'one_way')
+                    ->where('leg_index', $tripType === 'round_trip' ? $legIndex : 1)
+                    ->with(['bundle.product', 'bookingClass.cabin'])
+                    ->orderBy('base_price'),
             ])
-            ->orderBy('hour')
+            ->orderBy('departure_at')
             ->get();
 
         return $flights
-            ->map(fn (Flight $flight): array => $this->formatFlight($flight, $mode, $seatPassengers, $fareType))
+            ->map(fn (Flight $flight): array => $this->formatFlight($flight, $mode, $seatPassengers, $adults, $children, $infants, $user))
+            ->filter(fn (array $flight): bool => count($flight['fares']) > 0)
             ->values()
             ->all();
     }
@@ -61,91 +45,122 @@ class SearchFlights
     /**
      * @return array<string, mixed>
      */
-    private function formatFlight(Flight $flight, string $mode, int $seatPassengers, string $fareType): array
+    private function formatFlight(Flight $flight, string $mode, int $seatPassengers, int $adults, int $children, int $infants, ?User $user): array
     {
+        $fares = $flight->baseFares
+            ->filter(fn (BaseFare $baseFare): bool => $this->hasSeats($baseFare, $seatPassengers))
+            ->when($mode === 'basic', fn (Collection $fares): Collection => $fares
+                ->filter(fn (BaseFare $baseFare): bool => (bool) $baseFare->bundle->public)
+                ->sortBy('bundle.display_order')
+                ->take(5))
+            ->map(fn (BaseFare $baseFare): array => $this->formatOffer(
+                $this->offerBuilder->build($baseFare, $adults, $children, $infants, $user),
+                $seatPassengers,
+            ))
+            ->values()
+            ->all();
+
+        $firstFare = $flight->baseFares->first();
+
         return [
             'id' => $flight->id,
             'flight_number' => $flight->flight_number,
-            'plane_model' => $flight->plane_model,
-            'date' => $flight->date->toDateString(),
-            'hour' => substr($flight->hour, 0, 5),
+            'plane_model' => $flight->aircraft_type,
+            'date' => $flight->departure_at->toDateString(),
+            'hour' => $flight->departure_at->format('H:i'),
+            'duration_minutes' => $flight->duration_minutes,
+            'duration' => Flight::formatDuration($flight->duration_minutes),
+            'arrival_time' => $flight->arrival_at->format('H:i'),
             'origin' => [
                 'id' => $flight->originAirport->id,
                 'name' => $flight->originAirport->name,
-                'code' => $flight->originAirport->code,
+                'code' => $flight->originAirport->iata_code,
             ],
             'destination' => [
                 'id' => $flight->destinationAirport->id,
                 'name' => $flight->destinationAirport->name,
-                'code' => $flight->destinationAirport->code,
+                'code' => $flight->destinationAirport->iata_code,
             ],
-            'fare_type' => $fareType,
-            'fares' => $mode === 'basic'
-                ? $this->formatBasicFares($flight->availabilities, $seatPassengers)
-                : $this->formatFullFares($flight->availabilities, $seatPassengers),
+            'fare_type' => $firstFare instanceof BaseFare ? $firstFare->trip_type : 'one_way',
+            'fares' => $fares,
         ];
     }
 
-    /**
-     * @param  EloquentCollection<int, Availability>  $availabilities
-     * @return array<string, array<string, mixed>>
-     */
-    private function formatBasicFares(EloquentCollection $availabilities, int $seatPassengers): array
+    private function hasSeats(BaseFare $baseFare, int $seatPassengers): bool
     {
-        return collect(['A', 'B', 'C'])
-            ->mapWithKeys(function (string $classLetter) use ($availabilities, $seatPassengers): array {
-                $availability = $availabilities
-                    ->filter(fn (Availability $availability): bool => $this->matchesBasicClass($availability, $classLetter))
-                    ->filter(fn (Availability $availability): bool => $availability->count_available >= $seatPassengers)
-                    ->sortBy('base_price_usd')
-                    ->first();
-
-                return [
-                    $classLetter => $availability instanceof Availability
-                        ? $this->formatAvailability($availability, $seatPassengers)
-                        : ['available' => false],
-                ];
-            })
-            ->all();
-    }
-
-    private function matchesBasicClass(Availability $availability, string $classLetter): bool
-    {
-        return in_array($availability->class_letters, [$classLetter, "{$classLetter}(R)"], true);
-    }
-
-    /**
-     * @param  EloquentCollection<int, Availability>  $availabilities
-     * @return array<int, array<string, mixed>>
-     */
-    private function formatFullFares(EloquentCollection $availabilities, int $seatPassengers): array
-    {
-        return $availabilities
-            ->map(fn (Availability $availability): array => $this->formatAvailability($availability, $seatPassengers))
-            ->values()
-            ->all();
+        return FlightInventory::query()
+            ->where('flight_id', $baseFare->flight_id)
+            ->where('booking_class_id', $baseFare->booking_class_id)
+            ->where('available', '>=', $seatPassengers)
+            ->exists();
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function formatAvailability(Availability $availability, int $seatPassengers): array
+    private function formatOffer(Offer $offer, int $seatPassengers): array
     {
+        $services = $offer->offerServices
+            ->map(fn ($offerService): array => [
+                'code' => $offerService->service->code,
+                'name' => $offerService->service->name,
+                'category' => $offerService->service->category,
+                'value' => $offerService->value,
+                'quantity' => $offerService->quantity,
+                'included' => $offerService->included,
+                'price' => (float) $offerService->price,
+                'source' => $offerService->source,
+            ])
+            ->values();
+        $serviceValue = function (string $code, mixed $default = null) use ($services): mixed {
+            $service = $services->firstWhere('code', $code);
+
+            if (! is_array($service)) {
+                return $default;
+            }
+
+            $value = $service['value'] ?? $default;
+
+            return is_array($value) ? ($value['amount'] ?? $default) : $value;
+        };
+
         return [
-            'id' => $availability->id,
-            'class' => $availability->class,
-            'class_letters' => $availability->class_letters,
-            'fare_type' => $availability->fare_type,
-            'checked_baggage_kg' => $availability->checked_baggage_kg,
-            'cabin_baggage_kg' => $availability->cabin_baggage_kg,
-            'seat_selection_free' => $availability->seat_selection_free,
-            'change_fee_usd' => $availability->change_fee_usd,
-            'refund_fee_usd' => $availability->refund_fee_usd,
-            'latest_refund_hours' => $availability->latest_refund_hours,
-            'latest_change_hours' => $availability->latest_change_hours,
-            'base_price_usd' => $availability->base_price_usd,
-            'count_available' => $availability->count_available,
-            'available' => $availability->count_available >= $seatPassengers,
+            'id' => $offer->id,
+            'uuid' => $offer->uuid,
+            'base_fare_id' => $offer->base_fare_id,
+            'class' => $offer->bundle->name,
+            'package_code' => $offer->bundle->code,
+            'product' => $offer->bundle->product->name,
+            'public' => (bool) $offer->bundle->public,
+            'class_letters' => $offer->class_letters,
+            'fare_basis_code' => $offer->fare_basis_code,
+            'fare_type' => $offer->trip_type,
+            'leg_index' => $offer->leg_index,
+            'base_price_usd' => (float) $offer->total_price,
+            'per_passenger_price_usd' => $seatPassengers > 0 ? round((float) $offer->total_price / $seatPassengers, 2) : (float) $offer->total_price,
+            'checked_baggage_kg' => (int) $serviceValue('CHECKED_BAG', 0),
+            'cabin_baggage_kg' => (int) $serviceValue('CABIN_BAG', 0),
+            'seat_selection_free' => (bool) $serviceValue('SEAT_SELECTION', false),
+            'change_fee_usd' => (int) $serviceValue('CHANGE_FEE', 0),
+            'refund_fee_usd' => (int) $serviceValue('REFUND_FEE', 0),
+            'latest_change_hours' => $serviceValue('CHANGE_ALLOWED') ? 24 : null,
+            'latest_refund_hours' => $serviceValue('REFUNDABLE') ? 24 : null,
+            'count_available' => FlightInventory::query()
+                ->where('flight_id', $offer->flight_id)
+                ->where('booking_class_id', $offer->booking_class_id)
+                ->value('available') ?? 0,
+            'available' => true,
+            'expires_at' => $offer->expires_at->toIso8601String(),
+            'services' => $services->all(),
+            'price_components' => $offer->priceComponents
+                ->map(fn ($component): array => [
+                    'code' => $component->code,
+                    'label' => $component->label,
+                    'type' => $component->type,
+                    'amount' => (float) $component->amount,
+                ])
+                ->values()
+                ->all(),
         ];
     }
 }

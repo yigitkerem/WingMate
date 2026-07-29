@@ -1,16 +1,26 @@
 <?php
 
 use App\Filament\Resources\Airports\Pages\EditAirport;
-use App\Filament\Resources\Airports\RelationManagers\FlightsRelationManager;
-use App\Filament\Resources\Availabilities\Pages\EditAvailability;
-use App\Filament\Resources\Availabilities\RelationManagers\TicketsRelationManager;
-use App\Filament\Resources\Flights\Pages\EditFlight;
-use App\Filament\Resources\Flights\RelationManagers\AvailabilitiesRelationManager;
-use App\Models\Airport;
-use App\Models\Availability;
-use App\Models\Flight;
-use App\Models\Ticket;
+use App\Filament\Resources\Bundles\Pages\EditBundle;
+use App\Filament\Resources\Bundles\RelationManagers\BundleServicesRelationManager;
+use App\Filament\Resources\BundleServices\Pages\EditBundleService;
+use App\Filament\Resources\Cabins\Pages\EditCabin;
+use App\Filament\Resources\Flights\Pages\ListFlights;
+use App\Filament\Resources\Offers\Pages\ListOffers;
+use App\Filament\Resources\Offers\Pages\ViewOffer;
+use App\Filament\Resources\Orders\Pages\EditOrder;
+use App\Filament\Resources\PriceImportBatches\Pages\ListPriceImportBatches;
+use App\Filament\Resources\PricingRules\Pages\ListPricingRules;
+use App\Filament\Resources\Products\Pages\EditProduct;
+use App\Filament\Resources\Services\Pages\EditService;
+use App\Filament\Resources\Services\Pages\ListServices;
+use App\Models\BundleService;
+use App\Models\Offer;
+use App\Models\Order;
+use App\Models\PricingRule;
+use App\Models\Service;
 use App\Models\User;
+use App\Pricing\OfferBuilder;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 
@@ -18,90 +28,91 @@ use function Pest\Laravel\actingAs;
 
 beforeEach(function () {
     Filament::setCurrentPanel('admin');
-
-    actingAs(User::factory()->create([
-        'is_admin' => true,
-    ]));
+    actingAs(User::factory()->admin()->create());
 });
 
-it('shows flights arriving at or departing from an airport', function () {
-    $airport = Airport::factory()->create();
-    $otherAirport = Airport::factory()->create();
-    $unrelatedOriginAirport = Airport::factory()->create();
-    $unrelatedDestinationAirport = Airport::factory()->create();
-
-    $departingFlight = Flight::factory()->create([
-        'origin_airport_id' => $airport->id,
-        'destination_airport_id' => $otherAirport->id,
+it('renders core offer engine resources', function () {
+    $fixture = createSellablePricingFixture();
+    PricingRule::query()->create([
+        'name' => 'Test discount',
+        'priority' => 10,
+        'active' => true,
+        'stackable' => true,
+        'condition_expression' => 'route == "IST-LHR"',
+        'actions' => [['type' => 'percentage_discount', 'value' => 10]],
     ]);
-    $arrivingFlight = Flight::factory()->create([
-        'origin_airport_id' => $otherAirport->id,
-        'destination_airport_id' => $airport->id,
-    ]);
-    $unrelatedFlight = Flight::factory()->create([
-        'origin_airport_id' => $unrelatedOriginAirport->id,
-        'destination_airport_id' => $unrelatedDestinationAirport->id,
+    $offer = app(OfferBuilder::class)->build($fixture['baseFare'], 1, 0, 0);
+    $order = Order::query()->create([
+        'booking_reference' => 'ABC123',
+        'status' => 'confirmed',
+        'first_name' => 'Ada',
+        'last_name' => 'Lovelace',
+        'currency' => 'USD',
+        'total_price' => 125,
     ]);
 
-    Livewire::test(EditAirport::class, [
-        'record' => $airport->id,
-    ])
-        ->assertOk()
-        ->assertSeeLivewire(FlightsRelationManager::class);
+    foreach ([
+        ListFlights::class,
+        ListServices::class,
+        ListPricingRules::class,
+        ListOffers::class,
+        ListPriceImportBatches::class,
+    ] as $page) {
+        Livewire::test($page)->assertOk();
+    }
 
-    Livewire::test(FlightsRelationManager::class, [
-        'ownerRecord' => $airport,
-        'pageClass' => EditAirport::class,
-    ])
-        ->assertOk()
-        ->assertCanSeeTableRecords(collect([$departingFlight, $arrivingFlight]))
-        ->assertCanNotSeeTableRecords(collect([$unrelatedFlight]));
+    Livewire::test(EditAirport::class, ['record' => $fixture['origin']->getRouteKey()])->assertOk();
+    Livewire::test(EditCabin::class, ['record' => $fixture['cabin']->getRouteKey()])->assertOk();
+    Livewire::test(EditProduct::class, ['record' => $fixture['product']->getRouteKey()])->assertOk();
+    Livewire::test(EditBundle::class, ['record' => $fixture['bundle']->getRouteKey()])->assertOk();
+    Livewire::test(EditService::class, ['record' => $fixture['checkedBag']->getRouteKey()])->assertOk();
+    Livewire::test(EditOrder::class, ['record' => $order->getRouteKey()])->assertOk();
+    Livewire::test(ViewOffer::class, ['record' => $offer->getRouteKey()])->assertOk();
+
+    expect(Offer::query()->count())->toBe(1);
 });
 
-it('shows availabilities for a flight', function () {
-    $flight = Flight::factory()->create();
-    $availabilities = Availability::factory()
-        ->count(2)
-        ->create([
-            'flight_id' => $flight->id,
-        ]);
-    $unrelatedAvailability = Availability::factory()->create();
+it('edits boolean bundle service included values', function () {
+    $fixture = createSellablePricingFixture();
+    $service = Service::query()->create([
+        'code' => 'CHANGE_ALLOWED',
+        'name' => 'Change right',
+        'category' => 'FLEXIBILITY',
+        'value_type' => 'boolean',
+        'default_unit' => 'trip',
+    ]);
+    $bundleService = BundleService::query()->create([
+        'bundle_id' => $fixture['bundle']->id,
+        'service_id' => $service->id,
+        'included_value' => false,
+        'included' => true,
+    ]);
 
-    Livewire::test(EditFlight::class, [
-        'record' => $flight->id,
-    ])
+    Livewire::test(EditBundleService::class, ['record' => $bundleService->getRouteKey()])
         ->assertOk()
-        ->assertSeeLivewire(AvailabilitiesRelationManager::class);
+        ->fillForm([
+            'included_value_boolean' => true,
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
 
-    Livewire::test(AvailabilitiesRelationManager::class, [
-        'ownerRecord' => $flight,
-        'pageClass' => EditFlight::class,
+    expect($bundleService->refresh()->included_value)->toBeTrue();
+
+    Livewire::test(BundleServicesRelationManager::class, [
+        'ownerRecord' => $fixture['bundle'],
+        'pageClass' => EditBundle::class,
     ])
-        ->assertOk()
-        ->assertCanSeeTableRecords($availabilities)
-        ->assertCanNotSeeTableRecords(collect([$unrelatedAvailability]));
-});
+        ->mountTableAction('edit', $bundleService)
+        ->assertTableActionDataSet([
+            'included_value_boolean' => true,
+        ])
+        ->fillForm([
+            'service_id' => $service->id,
+            'included_value_boolean' => false,
+            'included' => true,
+        ])
+        ->callMountedTableAction()
+        ->assertHasNoFormErrors();
 
-it('shows tickets for an availability', function () {
-    $availability = Availability::factory()->create();
-    $tickets = Ticket::factory()
-        ->count(2)
-        ->create([
-            'availability_id' => $availability->id,
-        ]);
-    $unrelatedTicket = Ticket::factory()->create();
-
-    Livewire::test(EditAvailability::class, [
-        'record' => $availability->id,
-    ])
-        ->assertOk()
-        ->assertSeeLivewire(TicketsRelationManager::class);
-
-    Livewire::test(TicketsRelationManager::class, [
-        'ownerRecord' => $availability,
-        'pageClass' => EditAvailability::class,
-    ])
-        ->assertOk()
-        ->assertCanSeeTableRecords($tickets)
-        ->assertCanNotSeeTableRecords(collect([$unrelatedTicket]));
+    expect($bundleService->refresh()->included_value)->toBeFalse();
 });

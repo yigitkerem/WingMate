@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\SearchFlights;
 use App\Http\Requests\SearchFlightsRequest;
 use App\Models\Airport;
+use App\Models\User;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -40,6 +41,11 @@ class FlightSearchController extends Controller
                 $validated['search_mode'],
                 $seatPassengers,
                 $validated['trip_type'],
+                $validated['adults'],
+                $validated['children'],
+                $validated['babies'],
+                $request->user(),
+                1,
             ),
             'return' => $validated['trip_type'] === 'round_trip'
                 ? $searchFlights->execute(
@@ -49,24 +55,30 @@ class FlightSearchController extends Controller
                     $validated['search_mode'],
                     $seatPassengers,
                     $validated['trip_type'],
+                    $validated['adults'],
+                    $validated['children'],
+                    $validated['babies'],
+                    $request->user(),
+                    2,
                 )
                 : [],
-        ]);
+        ], 'flight-results');
     }
 
     /**
      * @param  array<string, mixed>  $filters
      * @param  array<string, mixed>|null  $results
      */
-    private function renderSearchPage(array $filters, ?array $results = null): Response
+    private function renderSearchPage(array $filters, ?array $results = null, string $component = 'flight-search'): Response
     {
         $user = request()->user();
-        $nameParts = $user ? preg_split('/\s+/', trim($user->name), 2) : [];
+        $customer = $user instanceof User ? $user : null;
+        $nameParts = $customer instanceof User ? preg_split('/\s+/', trim($customer->name), 2) : [];
 
-        return Inertia::render('flight-search', [
+        return Inertia::render($component, [
             'airports' => Airport::query()
-                ->select(['id', 'name', 'code'])
-                ->orderBy('code')
+                ->select(['id', 'name', 'iata_code as code'])
+                ->orderBy('iata_code')
                 ->get(),
             'filters' => [
                 'origin_airport_id' => $filters['origin_airport_id'] ?? null,
@@ -79,12 +91,14 @@ class FlightSearchController extends Controller
                 'children' => $filters['children'] ?? 0,
                 'babies' => $filters['babies'] ?? 0,
             ],
-            'canUseFullSearch' => request()->user()?->is_admin ?? false,
+            'canUseFullSearch' => $customer instanceof User ? $customer->is_admin : false,
             'customer' => [
-                'isAuthenticated' => $user !== null,
-                'isAdmin' => $user?->is_admin ?? false,
+                'isAuthenticated' => $customer !== null,
+                'isAdmin' => $customer instanceof User ? $customer->is_admin : false,
                 'firstName' => $nameParts[0] ?? '',
                 'lastName' => $nameParts[1] ?? '',
+                'email' => $customer instanceof User ? $customer->email : '',
+                'passportNumber' => $customer instanceof User ? ($customer->passport_number ?? '') : '',
             ],
             'results' => $results,
         ]);

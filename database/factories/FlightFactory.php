@@ -11,27 +11,20 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class FlightFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
-        $date = fake()->dateTimeBetween('-2 days', '+45 days');
+        $departureAt = now()->addDays(fake()->numberBetween(1, 30))->setTime(fake()->numberBetween(0, 22), fake()->randomElement([0, 10, 20, 30, 40, 50]));
+        $durationMinutes = fake()->numberBetween(90, 520);
 
         return [
-            'date' => $date->format('Y-m-d'),
-            'hour' => fake()->randomElement(['06:15', '08:40', '10:25', '13:10', '15:45', '18:20', '21:05']),
+            'flight_number' => 'TK'.fake()->unique()->numberBetween(100, 9999),
             'origin_airport_id' => Airport::factory(),
             'destination_airport_id' => Airport::factory(),
-            'flight_number' => 'DP'.fake()->numberBetween(100, 999),
-            'plane_model' => fake()->randomElement([
-                'Airbus A320neo',
-                'Airbus A321neo',
-                'Boeing 737 MAX 8',
-                'Boeing 787-9',
-            ]),
+            'departure_at' => $departureAt,
+            'arrival_at' => $departureAt->copy()->addMinutes($durationMinutes),
+            'duration_minutes' => $durationMinutes,
+            'aircraft_type' => fake()->randomElement(['Airbus A321neo', 'Airbus A330-300', 'Airbus A350-900', 'Boeing 787-9']),
+            'status' => 'scheduled',
         ];
     }
 }

@@ -3,313 +3,445 @@
 namespace Database\Seeders;
 
 use App\Models\Airport;
-use App\Models\Availability;
+use App\Models\BaseFare;
+use App\Models\BookingClass;
+use App\Models\Bundle;
+use App\Models\BundleService;
+use App\Models\Cabin;
 use App\Models\Flight;
-use App\Models\Pnr;
+use App\Models\FlightInventory;
+use App\Models\Offer;
+use App\Models\Order;
+use App\Models\PriceComponent;
+use App\Models\PricingRule;
+use App\Models\Product;
+use App\Models\Service as AirlineService;
+use App\Models\ServiceConstraint;
+use App\Models\ServicePrice;
 use App\Models\Ticket;
+use App\Models\TicketSegment;
+use App\Models\User;
+use App\Pricing\OfferBuilder;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class AirlineDemoSeeder extends Seeder
 {
     /**
-     * @var array<int, array{label: string, letter: string, offset: int, base_count: int}>
+     * @var array<string, array{name: string, city: string, country: string, timezone: string, icao?: string}>
      */
-    private const array EXTRA_CLASS_PROFILES = [
-        ['label' => 'Economy Saver', 'letter' => 'E', 'offset' => 35, 'base_count' => 20],
-        ['label' => 'Economy Standard', 'letter' => 'M', 'offset' => 95, 'base_count' => 18],
-        ['label' => 'Economy Full', 'letter' => 'YQ', 'offset' => 170, 'base_count' => 14],
-        ['label' => 'Premium Economy', 'letter' => 'W', 'offset' => 240, 'base_count' => 12],
-        ['label' => 'Business Saver', 'letter' => 'D', 'offset' => 430, 'base_count' => 8],
-        ['label' => 'Business Full', 'letter' => 'J', 'offset' => 680, 'base_count' => 6],
+    private const array AIRPORTS = [
+        'IST' => ['name' => 'Istanbul Airport', 'city' => 'Istanbul', 'country' => 'TR', 'timezone' => 'Europe/Istanbul', 'icao' => 'LTFM'],
+        'SAW' => ['name' => 'Sabiha Gokcen International Airport', 'city' => 'Istanbul', 'country' => 'TR', 'timezone' => 'Europe/Istanbul', 'icao' => 'LTFJ'],
+        'ESB' => ['name' => 'Ankara Esenboga Airport', 'city' => 'Ankara', 'country' => 'TR', 'timezone' => 'Europe/Istanbul', 'icao' => 'LTAC'],
+        'ADB' => ['name' => 'Izmir Adnan Menderes Airport', 'city' => 'Izmir', 'country' => 'TR', 'timezone' => 'Europe/Istanbul', 'icao' => 'LTBJ'],
+        'AYT' => ['name' => 'Antalya Airport', 'city' => 'Antalya', 'country' => 'TR', 'timezone' => 'Europe/Istanbul', 'icao' => 'LTAI'],
+        'LHR' => ['name' => 'London Heathrow Airport', 'city' => 'London', 'country' => 'GB', 'timezone' => 'Europe/London', 'icao' => 'EGLL'],
+        'CDG' => ['name' => 'Paris Charles de Gaulle Airport', 'city' => 'Paris', 'country' => 'FR', 'timezone' => 'Europe/Paris', 'icao' => 'LFPG'],
+        'AMS' => ['name' => 'Amsterdam Schiphol Airport', 'city' => 'Amsterdam', 'country' => 'NL', 'timezone' => 'Europe/Amsterdam', 'icao' => 'EHAM'],
+        'FRA' => ['name' => 'Frankfurt Airport', 'city' => 'Frankfurt', 'country' => 'DE', 'timezone' => 'Europe/Berlin', 'icao' => 'EDDF'],
+        'DXB' => ['name' => 'Dubai International Airport', 'city' => 'Dubai', 'country' => 'AE', 'timezone' => 'Asia/Dubai', 'icao' => 'OMDB'],
+        'JFK' => ['name' => 'John F. Kennedy International Airport', 'city' => 'New York', 'country' => 'US', 'timezone' => 'America/New_York', 'icao' => 'KJFK'],
+        'SIN' => ['name' => 'Singapore Changi Airport', 'city' => 'Singapore', 'country' => 'SG', 'timezone' => 'Asia/Singapore', 'icao' => 'WSSS'],
     ];
 
     /**
-     * Run the database seeds.
+     * @var array<int, array{0: string, 1: string, 2: int, 3: int, 4: array<int, string>}>
      */
+    private const array ROUTES = [
+        ['IST', 'LHR', 210, 250, ['07:35', '13:20', '18:55']],
+        ['LHR', 'IST', 205, 230, ['09:10', '15:45', '21:10']],
+        ['IST', 'CDG', 185, 220, ['06:50', '12:30', '19:25']],
+        ['CDG', 'IST', 178, 205, ['08:05', '14:00', '20:15']],
+        ['IST', 'AMS', 190, 225, ['08:45', '16:20']],
+        ['AMS', 'IST', 180, 205, ['10:25', '18:10']],
+        ['IST', 'FRA', 170, 200, ['07:10', '17:30']],
+        ['FRA', 'IST', 165, 185, ['11:20', '19:40']],
+        ['IST', 'DXB', 295, 275, ['01:45', '14:15', '22:30']],
+        ['DXB', 'IST', 300, 295, ['03:05', '12:25', '20:50']],
+        ['IST', 'JFK', 620, 660, ['08:25', '14:05']],
+        ['JFK', 'IST', 590, 570, ['00:20', '19:00']],
+        ['IST', 'SIN', 690, 650, ['02:10']],
+        ['SIN', 'IST', 660, 680, ['10:15']],
+        ['SAW', 'ADB', 72, 65, ['08:00', '13:35', '20:20']],
+        ['ADB', 'SAW', 70, 65, ['07:50', '15:10', '21:15']],
+    ];
+
     public function run(): void
     {
-        Ticket::query()->delete();
-        Pnr::query()->delete();
-        Availability::query()->delete();
-        Flight::query()->delete();
+        Schema::disableForeignKeyConstraints();
+        collect([
+            TicketSegment::class,
+            Ticket::class,
+            Order::class,
+            PriceComponent::class,
+            Offer::class,
+            BaseFare::class,
+            FlightInventory::class,
+            Flight::class,
+            ServicePrice::class,
+            ServiceConstraint::class,
+            BundleService::class,
+            AirlineService::class,
+            Bundle::class,
+            Product::class,
+            BookingClass::class,
+            Cabin::class,
+            PricingRule::class,
+            Airport::class,
+        ])->each(fn (string $model): int => $model::query()->delete());
+        Schema::enableForeignKeyConstraints();
 
-        $airports = collect([
-            ['name' => 'Istanbul Airport', 'code' => 'IST'],
-            ['name' => 'London Heathrow Airport', 'code' => 'LHR'],
-            ['name' => 'Paris Charles de Gaulle Airport', 'code' => 'CDG'],
-            ['name' => 'Amsterdam Schiphol Airport', 'code' => 'AMS'],
-            ['name' => 'Frankfurt Airport', 'code' => 'FRA'],
-            ['name' => 'Dubai International Airport', 'code' => 'DXB'],
-            ['name' => 'John F. Kennedy International Airport', 'code' => 'JFK'],
-            ['name' => 'Singapore Changi Airport', 'code' => 'SIN'],
-        ])->mapWithKeys(fn (array $airport): array => [
-            $airport['code'] => Airport::query()->updateOrCreate(
-                ['code' => $airport['code']],
-                ['name' => $airport['name']],
-            ),
-        ]);
+        $airports = $this->seedAirports();
+        $cabins = $this->seedCabins();
+        $classes = $this->seedBookingClasses($cabins);
+        $bundles = $this->seedProductsAndBundles();
+        $services = $this->seedServices($bundles);
+        $this->seedRules();
+        $this->seedFlights($airports, $classes, $bundles);
+        $this->seedHistory($airports, $classes, $bundles);
+    }
 
-        $routes = [
-            ['IST', 'LHR', 180, ['07:35', '13:20', '18:55']],
-            ['LHR', 'IST', 178, ['09:10', '15:45', '21:10']],
-            ['IST', 'CDG', 150, ['06:50', '12:30', '19:25']],
-            ['CDG', 'IST', 152, ['08:05', '14:00', '20:15']],
-            ['IST', 'AMS', 145, ['08:45', '16:20']],
-            ['AMS', 'IST', 143, ['10:25', '18:10']],
-            ['IST', 'FRA', 135, ['07:10', '17:30']],
-            ['FRA', 'IST', 138, ['11:20', '19:40']],
-            ['IST', 'DXB', 260, ['01:45', '14:15', '22:30']],
-            ['DXB', 'IST', 255, ['03:05', '12:25', '20:50']],
-            ['LHR', 'JFK', 520, ['09:55', '16:10']],
-            ['JFK', 'LHR', 515, ['18:40', '22:15']],
-            ['DXB', 'SIN', 390, ['02:15', '21:40']],
-            ['SIN', 'DXB', 388, ['01:20', '20:30']],
-            ['FRA', 'JFK', 545, ['10:15', '17:05']],
-            ['JFK', 'FRA', 540, ['19:00', '23:30']],
+    /**
+     * @return array<string, Airport>
+     */
+    private function seedAirports(): array
+    {
+        return collect(self::AIRPORTS)
+            ->mapWithKeys(fn (array $airport, string $code): array => [
+                $code => Airport::query()->create([
+                    'iata_code' => $code,
+                    'icao_code' => $airport['icao'],
+                    'name' => $airport['name'],
+                    'city' => $airport['city'],
+                    'country' => $airport['country'],
+                    'timezone' => $airport['timezone'],
+                ]),
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<string, Cabin>
+     */
+    private function seedCabins(): array
+    {
+        return [
+            'ECONOMY' => Cabin::query()->create(['code' => 'ECONOMY', 'name' => 'Economy', 'display_order' => 1]),
+            'BUSINESS' => Cabin::query()->create(['code' => 'BUSINESS', 'name' => 'Business', 'display_order' => 2]),
+        ];
+    }
+
+    /**
+     * @param  array<string, Cabin>  $cabins
+     * @return array<string, BookingClass>
+     */
+    private function seedBookingClasses(array $cabins): array
+    {
+        $rows = [
+            ['V', 'ECONOMY', 10],
+            ['Q', 'ECONOMY', 20],
+            ['M', 'ECONOMY', 30],
+            ['Y', 'ECONOMY', 40],
+            ['D', 'BUSINESS', 50],
+            ['J', 'BUSINESS', 60],
         ];
 
-        $flightSequence = 100;
+        return collect($rows)
+            ->mapWithKeys(fn (array $row): array => [
+                $row[0] => BookingClass::query()->create([
+                    'code' => $row[0],
+                    'cabin_id' => $cabins[$row[1]]->id,
+                    'priority' => $row[2],
+                ]),
+            ])
+            ->all();
+    }
 
-        foreach (range(0, 24) as $dayOffset) {
-            $date = CarbonImmutable::today()->addDays($dayOffset);
+    /**
+     * @return array<string, Bundle>
+     */
+    private function seedProductsAndBundles(): array
+    {
+        $economy = Product::query()->create(['code' => 'ECONOMY', 'name' => 'Economy', 'description' => 'Economy cabin offers']);
+        $business = Product::query()->create(['code' => 'BUSINESS', 'name' => 'Business', 'description' => 'Business cabin offers']);
 
-            foreach ($routes as [$originCode, $destinationCode, $basePriceUsd, $hours]) {
-                foreach ($hours as $hour) {
-                    $flight = Flight::query()->create([
-                        'date' => $date->toDateString(),
-                        'hour' => $hour,
-                        'origin_airport_id' => $airports[$originCode]->id,
-                        'destination_airport_id' => $airports[$destinationCode]->id,
-                        'flight_number' => 'DP'.$flightSequence++,
-                        'plane_model' => $this->planeForRoute($originCode, $destinationCode),
-                    ]);
+        return [
+            'ECOFLY' => Bundle::query()->create(['product_id' => $economy->id, 'code' => 'ECOFLY', 'name' => 'EcoFly', 'description' => 'Lowest economy fare', 'display_order' => 1]),
+            'EXTRAFLY' => Bundle::query()->create(['product_id' => $economy->id, 'code' => 'EXTRAFLY', 'name' => 'ExtraFly', 'description' => 'Economy with baggage and seat options', 'display_order' => 2]),
+            'PRIMEFLY' => Bundle::query()->create(['product_id' => $economy->id, 'code' => 'PRIMEFLY', 'name' => 'PrimeFly', 'description' => 'Flexible economy fare', 'display_order' => 3]),
+            'BUSINESSFLY' => Bundle::query()->create(['product_id' => $business->id, 'code' => 'BUSINESSFLY', 'name' => 'BusinessFly', 'description' => 'Business essentials', 'display_order' => 4]),
+            'BUSINESSPRIME' => Bundle::query()->create(['product_id' => $business->id, 'code' => 'BUSINESSPRIME', 'name' => 'BusinessPrime', 'description' => 'Fully flexible business', 'display_order' => 5]),
+        ];
+    }
 
-                    $this->createAvailability($flight, $basePriceUsd, $dayOffset);
-                }
+    /**
+     * @param  array<string, Bundle>  $bundles
+     * @return array<string, AirlineService>
+     */
+    private function seedServices(array $bundles): array
+    {
+        $services = collect([
+            ['CHECKED_BAG', 'Checked baggage', 'BAG', 'integer', 'kg', 35],
+            ['CABIN_BAG', 'Cabin baggage', 'BAG', 'integer', 'kg', 15],
+            ['SEAT_SELECTION', 'Seat selection', 'SEAT', 'boolean', 'seat', 18],
+            ['CHANGE_ALLOWED', 'Change right', 'FLEXIBILITY', 'boolean', 'trip', 0],
+            ['CHANGE_FEE', 'Change fee', 'FLEXIBILITY', 'decimal', 'trip', 0],
+            ['REFUNDABLE', 'Refund right', 'FLEXIBILITY', 'boolean', 'trip', 0],
+            ['REFUND_FEE', 'Refund fee', 'FLEXIBILITY', 'decimal', 'trip', 0],
+            ['LOUNGE', 'Lounge access', 'LOUNGE', 'boolean', 'passenger', 55],
+            ['FAST_TRACK', 'Fast track', 'AIRPORT', 'boolean', 'passenger', 25],
+            ['PRIORITY_BOARDING', 'Priority boarding', 'AIRPORT', 'boolean', 'passenger', 18],
+            ['WIFI', 'Wi-Fi', 'CONNECTIVITY', 'boolean', 'flight', 12],
+            ['MEAL', 'Special meal', 'MEAL', 'boolean', 'passenger', 16],
+        ])->mapWithKeys(function (array $row): array {
+            $service = AirlineService::query()->create([
+                'code' => $row[0],
+                'name' => $row[1],
+                'category' => $row[2],
+                'value_type' => $row[3],
+                'default_unit' => $row[4],
+            ]);
+
+            ServicePrice::query()->create([
+                'service_id' => $service->id,
+                'currency' => 'USD',
+                'unit_price' => $row[5],
+                'max_quantity' => $row[0] === 'CHECKED_BAG' ? 3 : 1,
+            ]);
+
+            return [$service->code => $service];
+        })->all();
+
+        $bundleMatrix = [
+            'ECOFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 0], 'SEAT_SELECTION' => false, 'CHANGE_ALLOWED' => false, 'CHANGE_FEE' => ['amount' => null], 'REFUNDABLE' => false, 'REFUND_FEE' => ['amount' => null]],
+            'EXTRAFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 23], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 55], 'REFUNDABLE' => false, 'REFUND_FEE' => ['amount' => null]],
+            'PRIMEFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 30], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 0], 'REFUNDABLE' => true, 'REFUND_FEE' => ['amount' => 45], 'PRIORITY_BOARDING' => true],
+            'BUSINESSFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 40], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 40], 'REFUNDABLE' => false, 'REFUND_FEE' => ['amount' => null], 'LOUNGE' => true, 'FAST_TRACK' => true],
+            'BUSINESSPRIME' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 50], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 0], 'REFUNDABLE' => true, 'REFUND_FEE' => ['amount' => 0], 'LOUNGE' => true, 'FAST_TRACK' => true, 'PRIORITY_BOARDING' => true],
+        ];
+
+        foreach ($bundleMatrix as $bundleCode => $serviceValues) {
+            foreach ($serviceValues as $serviceCode => $value) {
+                BundleService::query()->create([
+                    'bundle_id' => $bundles[$bundleCode]->id,
+                    'service_id' => $services[$serviceCode]->id,
+                    'included_value' => $value,
+                    'included' => $this->serviceValueIsIncluded($value),
+                ]);
             }
         }
 
-        Availability::query()
-            ->inRandomOrder()
-            ->limit(120)
-            ->get()
-            ->each(function (Availability $availability): void {
-                $pnr = Pnr::factory()->create();
+        ServiceConstraint::query()->create([
+            'service_id' => $services['CHECKED_BAG']->id,
+            'type' => 'requires',
+            'related_service_id' => $services['CABIN_BAG']->id,
+            'message' => 'Checked baggage requires a cabin baggage allowance.',
+        ]);
+        ServiceConstraint::query()->create([
+            'service_id' => $services['CHECKED_BAG']->id,
+            'type' => 'max_quantity',
+            'parameters' => ['quantity' => 3],
+            'message' => 'At most three checked bags can be selected.',
+        ]);
 
-                Ticket::factory()
-                    ->count(fake()->numberBetween(1, 3))
-                    ->create([
-                        'availability_id' => $availability->id,
-                        'pnr_id' => $pnr->id,
-                    ]);
-            });
+        return $services;
     }
 
-    private function createAvailability(Flight $flight, int $basePriceUsd, int $dayOffset): void
+    private function serviceValueIsIncluded(mixed $value): bool
     {
-        $demandMultiplier = match (true) {
-            $dayOffset <= 2 => 1.45,
-            $dayOffset <= 7 => 1.25,
-            $dayOffset <= 14 => 1.10,
+        if (is_array($value)) {
+            return ((float) ($value['amount'] ?? 0)) > 0;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return ((float) $value) > 0;
+        }
+
+        return $value !== null && $value !== '';
+    }
+
+    private function seedRules(): void
+    {
+        collect([
+            ['Weekend uplift', 'weekend', 20, true, "contains('fri,sat,sun', departure_day)", [['type' => 'percentage_surcharge', 'value' => 12, 'label' => 'Weekend demand']]],
+            ['Elite extra fast track', 'loyalty_service', 30, true, "loyalty_tier == 'elite' || loyalty_tier == 'elite_plus'", [['type' => 'include_service', 'service_code' => 'FAST_TRACK', 'label' => 'Elite fast track']]],
+            ['Repeat route discount', 'history_discount', 40, true, 'route_count_12m >= 10', [['type' => 'percentage_discount', 'value' => 10, 'label' => 'Repeat route discount']]],
+            ['Roundtrip saving', 'roundtrip_discount', 50, true, "trip_type == 'round_trip'", [['type' => 'percentage_discount', 'value' => 8, 'label' => 'Roundtrip saving']]],
+            ['IST-JFK market surcharge', 'route_surcharge', 60, true, "route == 'IST-JFK'", [['type' => 'percentage_surcharge', 'value' => 6, 'label' => 'Long-haul demand']]],
+        ])->each(fn (array $rule): PricingRule => PricingRule::query()->create([
+            'name' => $rule[0],
+            'preset' => $rule[1],
+            'priority' => $rule[2],
+            'active' => true,
+            'stackable' => $rule[3],
+            'condition_expression' => $rule[4],
+            'actions' => $rule[5],
+        ]));
+    }
+
+    /**
+     * @param  array<string, Airport>  $airports
+     * @param  array<string, BookingClass>  $classes
+     * @param  array<string, Bundle>  $bundles
+     */
+    private function seedFlights(array $airports, array $classes, array $bundles): void
+    {
+        $sequence = 100;
+
+        foreach (range(0, 44) as $dayOffset) {
+            foreach (self::ROUTES as [$origin, $destination, $price, $duration, $hours]) {
+                foreach ($hours as $hour) {
+                    $departureAt = CarbonImmutable::today()->addDays($dayOffset)->setTimeFromTimeString($hour);
+                    $flight = Flight::query()->create([
+                        'flight_number' => 'TK'.$sequence++,
+                        'origin_airport_id' => $airports[$origin]->id,
+                        'destination_airport_id' => $airports[$destination]->id,
+                        'departure_at' => $departureAt,
+                        'arrival_at' => $departureAt->addMinutes($duration),
+                        'duration_minutes' => $duration,
+                        'aircraft_type' => $this->aircraftFor($origin, $destination),
+                        'status' => 'scheduled',
+                    ]);
+
+                    $this->seedInventoryAndFares($flight, $classes, $bundles, $price, $dayOffset);
+                }
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, BookingClass>  $classes
+     * @param  array<string, Bundle>  $bundles
+     */
+    private function seedInventoryAndFares(Flight $flight, array $classes, array $bundles, int $routePrice, int $dayOffset): void
+    {
+        $demand = match (true) {
+            $dayOffset <= 3 => 1.35,
+            $dayOffset <= 10 => 1.20,
+            $dayOffset <= 21 => 1.08,
             default => 1.00,
         };
 
-        $prices = [
-            'A' => (int) round($basePriceUsd * $demandMultiplier),
-            'B' => (int) round(($basePriceUsd + 65) * $demandMultiplier),
-            'C' => (int) round(($basePriceUsd + 280) * $demandMultiplier),
+        $profiles = [
+            ['ECOFLY', 'V', 0, 44],
+            ['EXTRAFLY', 'Q', 75, 36],
+            ['PRIMEFLY', 'M', 145, 28],
+            ['BUSINESSFLY', 'D', 420, 12],
+            ['BUSINESSPRIME', 'J', 720, 8],
         ];
 
-        collect(Flight::defaultAvailabilityTemplates($prices['A'], $prices['B'], $prices['C']))
-            ->each(function (array $availability, string $classLetter) use ($flight, $dayOffset): void {
-                Availability::query()->create([
-                    ...$availability,
-                    'flight_id' => $flight->id,
-                    'count_available' => $this->defaultAvailabilityCount($classLetter, $dayOffset),
-                ]);
-            });
+        foreach ($profiles as [$bundleCode, $classCode, $offset, $capacity]) {
+            FlightInventory::query()->updateOrCreate(
+                ['flight_id' => $flight->id, 'booking_class_id' => $classes[$classCode]->id],
+                ['capacity' => $capacity, 'available' => fake()->numberBetween(max(2, (int) ($capacity * 0.25)), $capacity)],
+            );
 
-        collect(Flight::roundTripAvailabilityTemplates($prices['A'], $prices['B'], $prices['C']))
-            ->each(function (array $availability, string $classLetter) use ($flight, $dayOffset): void {
-                Availability::query()->create([
-                    ...$availability,
-                    'flight_id' => $flight->id,
-                    'count_available' => $this->roundTripAvailabilityCount($classLetter, $dayOffset),
-                ]);
-            });
-
-        Availability::query()->insert(
-            collect(['one_way', 'round_trip'])
-                ->flatMap(fn (string $fareType): Collection => $this->extraAvailabilityRows(
-                    $flight,
-                    $basePriceUsd,
-                    $demandMultiplier,
-                    $dayOffset,
-                    $fareType,
-                ))
-                ->all(),
-        );
-    }
-
-    /**
-     * @return Collection<int, array{checked_baggage_kg: int, cabin_baggage_kg: int, seat_selection_free: bool, refund_paid: bool, latest_refund_hours: int|null, change_paid: bool, latest_change_hours: int|null}>
-     */
-    public static function fareFeatureCombinations(): Collection
-    {
-        return collect([0, 15, 20, 25])
-            ->crossJoin(
-                [0, 8],
-                [false, true],
-                [
-                    ['paid' => false, 'latest_hours' => 12],
-                    ['paid' => false, 'latest_hours' => 72],
-                    ['paid' => true, 'latest_hours' => null],
-                ],
-                [
-                    ['paid' => false, 'latest_hours' => 6],
-                    ['paid' => false, 'latest_hours' => 36],
-                    ['paid' => true, 'latest_hours' => null],
-                ],
-            )
-            ->reject(fn (array $combination): bool => $combination[0] > 0 && $combination[1] === 0)
-            ->map(fn (array $combination): array => [
-                'checked_baggage_kg' => $combination[0],
-                'cabin_baggage_kg' => $combination[1],
-                'seat_selection_free' => $combination[2],
-                'refund_paid' => $combination[3]['paid'],
-                'latest_refund_hours' => $combination[3]['latest_hours'],
-                'change_paid' => $combination[4]['paid'],
-                'latest_change_hours' => $combination[4]['latest_hours'],
-            ]);
-    }
-
-    /**
-     * @return Collection<int, array<string, bool|int|string|null>>
-     */
-    private function extraAvailabilityRows(Flight $flight, int $basePriceUsd, float $demandMultiplier, int $dayOffset, string $fareType): Collection
-    {
-        $timestamp = now();
-
-        return self::fareFeatureCombinations()
-            ->values()
-            ->map(function (array $features, int $index) use ($flight, $basePriceUsd, $demandMultiplier, $dayOffset, $fareType, $timestamp): array {
-                $profile = self::EXTRA_CLASS_PROFILES[$index % count(self::EXTRA_CLASS_PROFILES)];
-                $oneWayPriceUsd = (int) round(
-                    ($basePriceUsd + $profile['offset'] + $this->featurePriceOffset($features)) * $demandMultiplier,
-                );
-                $classLetters = self::fareFeatureCode($features);
-                $countAvailable = $this->extraAvailabilityCount($profile['base_count'], $dayOffset);
-
-                if ($fareType === 'round_trip') {
-                    $classLetters .= '(R)';
-                    $countAvailable = max(0, (int) round($countAvailable * 0.75));
+            foreach (['one_way' => [1], 'round_trip' => [1, 2]] as $tripType => $legs) {
+                foreach ($legs as $legIndex) {
+                    $base = (int) round(($routePrice + $offset) * $demand * ($tripType === 'round_trip' ? 0.88 : 1));
+                    BaseFare::query()->create([
+                        'flight_id' => $flight->id,
+                        'booking_class_id' => $classes[$classCode]->id,
+                        'bundle_id' => $bundles[$bundleCode]->id,
+                        'trip_type' => $tripType,
+                        'leg_index' => $legIndex,
+                        'currency' => 'USD',
+                        'base_price' => $base,
+                        'taxes' => $this->taxFor($flight),
+                        'fees' => $tripType === 'round_trip' ? 22 : 28,
+                        'fare_basis_template' => '{class}{bundle}{trip}{leg}',
+                        'class_letters' => $tripType === 'round_trip' ? "{$classCode}(R{$legIndex})" : $classCode,
+                    ]);
                 }
-
-                return [
-                    'flight_id' => $flight->id,
-                    'class' => $fareType === 'round_trip' ? "{$profile['label']} Roundtrip" : $profile['label'],
-                    'checked_baggage_kg' => $features['checked_baggage_kg'],
-                    'cabin_baggage_kg' => $features['cabin_baggage_kg'],
-                    'seat_selection_free' => $features['seat_selection_free'],
-                    'change_fee_usd' => $features['change_paid'] ? $this->changePenaltyUsd($oneWayPriceUsd) : 0,
-                    'refund_fee_usd' => $features['refund_paid'] ? $this->refundPenaltyUsd($oneWayPriceUsd) : 0,
-                    'latest_refund_hours' => $features['latest_refund_hours'],
-                    'latest_change_hours' => $features['latest_change_hours'],
-                    'class_letters' => $classLetters,
-                    'fare_type' => $fareType,
-                    'base_price_usd' => $fareType === 'round_trip' ? Flight::roundTripPrice($oneWayPriceUsd) : $oneWayPriceUsd,
-                    'count_available' => $countAvailable,
-                    'created_at' => $timestamp,
-                    'updated_at' => $timestamp,
-                ];
-            });
+            }
+        }
     }
 
     /**
-     * @param  array{checked_baggage_kg: int, cabin_baggage_kg: int, seat_selection_free: bool, refund_paid: bool, latest_refund_hours: int|null, change_paid: bool, latest_change_hours: int|null}  $features
+     * @param  array<string, Airport>  $airports
+     * @param  array<string, BookingClass>  $classes
+     * @param  array<string, Bundle>  $bundles
      */
-    public static function fareFeatureCode(array $features): string
+    private function seedHistory(array $airports, array $classes, array $bundles): void
     {
-        return collect([
-            "CB{$features['cabin_baggage_kg']}",
-            "CHK{$features['checked_baggage_kg']}",
-            $features['seat_selection_free'] ? 'S' : 'SP',
-            $features['change_paid'] ? 'CHP' : "CHFH{$features['latest_change_hours']}",
-            $features['refund_paid'] ? 'RFP' : "RFFH{$features['latest_refund_hours']}",
-        ])->implode('/');
-    }
+        $user = User::query()->updateOrCreate(
+            ['email' => 'frequent@example.com'],
+            ['name' => 'Frequent Flyer', 'password' => 'password', 'passport_number' => 'FF1234567', 'loyalty_tier' => 'elite'],
+        );
 
-    /**
-     * @param  array{checked_baggage_kg: int, cabin_baggage_kg: int, seat_selection_free: bool, refund_paid: bool, latest_refund_hours: int|null, change_paid: bool, latest_change_hours: int|null}  $features
-     */
-    private function featurePriceOffset(array $features): int
-    {
-        $refundOffset = match ($features['latest_refund_hours']) {
-            12 => 24,
-            72 => 48,
-            default => 0,
-        };
-        $changeOffset = match ($features['latest_change_hours']) {
-            6 => 18,
-            36 => 36,
-            default => 0,
-        };
+        $builder = app(OfferBuilder::class);
 
-        return ($features['checked_baggage_kg'] * 3)
-            + ($features['cabin_baggage_kg'] === 8 ? 20 : 0)
-            + ($features['seat_selection_free'] ? 18 : 0)
-            + $refundOffset
-            + $changeOffset;
-    }
-
-    private function changePenaltyUsd(int $oneWayPriceUsd): int
-    {
-        return max(30, (int) round($oneWayPriceUsd * 0.25));
-    }
-
-    private function refundPenaltyUsd(int $oneWayPriceUsd): int
-    {
-        return max(50, (int) round($oneWayPriceUsd * 0.45));
-    }
-
-    private function extraAvailabilityCount(int $baseCount, int $dayOffset): int
-    {
-        if ($dayOffset <= 2) {
-            return fake()->numberBetween(0, $baseCount);
+        foreach (range(1, 10) as $index) {
+            $departureAt = CarbonImmutable::today()->subMonths($index)->setTime(9, 20);
+            $flight = Flight::query()->create([
+                'flight_number' => 'TK9'.$index,
+                'origin_airport_id' => $airports['IST']->id,
+                'destination_airport_id' => $airports['LHR']->id,
+                'departure_at' => $departureAt,
+                'arrival_at' => $departureAt->addMinutes(250),
+                'duration_minutes' => 250,
+                'aircraft_type' => 'Airbus A321neo',
+                'status' => 'completed',
+            ]);
+            FlightInventory::query()->create(['flight_id' => $flight->id, 'booking_class_id' => $classes['Q']->id, 'capacity' => 30, 'available' => 20]);
+            $fare = BaseFare::query()->create([
+                'flight_id' => $flight->id,
+                'booking_class_id' => $classes['Q']->id,
+                'bundle_id' => $bundles['EXTRAFLY']->id,
+                'trip_type' => 'one_way',
+                'leg_index' => 1,
+                'base_price' => 220,
+                'taxes' => 42,
+                'fees' => 25,
+                'fare_basis_template' => '{class}{bundle}{trip}{leg}',
+                'class_letters' => 'Q',
+            ]);
+            $offer = $builder->build($fare, 1, 0, 0, $user);
+            $order = Order::query()->create([
+                'user_id' => $user->id,
+                'booking_reference' => 'HX'.str_pad((string) $index, 4, '0', STR_PAD_LEFT),
+                'status' => 'flown',
+                'first_name' => 'Frequent',
+                'last_name' => 'Flyer',
+                'email' => $user->email,
+                'passport_number' => $user->passport_number,
+                'total_price' => $offer->total_price,
+                'passengers' => ['adults' => 1, 'children' => 0, 'infants' => 0],
+                'created_at' => $departureAt,
+                'updated_at' => $departureAt,
+            ]);
+            $ticket = Ticket::query()->create([
+                'order_id' => $order->id,
+                'offer_id' => $offer->id,
+                'ticket_number' => '23599'.str_pad((string) $index, 8, '0', STR_PAD_LEFT),
+                'passenger_type' => 'ADT',
+                'status' => 'flown',
+                'issued_at' => $departureAt,
+            ]);
+            TicketSegment::query()->create([
+                'ticket_id' => $ticket->id,
+                'flight_id' => $flight->id,
+                'booking_class_id' => $classes['Q']->id,
+                'coupon_status' => 'flown',
+            ]);
         }
-
-        return fake()->numberBetween(1, $baseCount);
     }
 
-    private function defaultAvailabilityCount(string $classLetter, int $dayOffset): int
+    private function aircraftFor(string $origin, string $destination): string
     {
-        if ($dayOffset <= 2 && $classLetter === 'A') {
-            return fake()->randomElement([0, 0, 1, 2, 4]);
-        }
-
-        return match ($classLetter) {
-            'A' => fake()->numberBetween(0, 18),
-            'B' => fake()->numberBetween(2, 14),
-            'C' => fake()->numberBetween(1, 8),
-            default => 0,
-        };
+        return in_array($origin, ['JFK', 'SIN', 'DXB'], true) || in_array($destination, ['JFK', 'SIN', 'DXB'], true)
+            ? fake()->randomElement(['Airbus A330-300', 'Airbus A350-900', 'Boeing 787-9'])
+            : fake()->randomElement(['Airbus A320neo', 'Airbus A321neo', 'Boeing 737 MAX 8']);
     }
 
-    private function roundTripAvailabilityCount(string $classLetter, int $dayOffset): int
+    private function taxFor(Flight $flight): int
     {
-        return max(0, (int) round($this->defaultAvailabilityCount($classLetter, $dayOffset) * 0.75));
-    }
-
-    private function planeForRoute(string $originCode, string $destinationCode): string
-    {
-        $longHaulCodes = ['JFK', 'SIN', 'DXB'];
-
-        if (in_array($originCode, $longHaulCodes, true) || in_array($destinationCode, $longHaulCodes, true)) {
-            return fake()->randomElement(['Airbus A330-300', 'Airbus A350-900', 'Boeing 787-9']);
-        }
-
-        return fake()->randomElement(['Airbus A320neo', 'Airbus A321neo', 'Boeing 737 MAX 8']);
+        return in_array($flight->originAirport->country, ['TR'], true) && in_array($flight->destinationAirport->country, ['TR'], true) ? 18 : 46;
     }
 }

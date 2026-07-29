@@ -1,178 +1,69 @@
 <?php
 
 use App\Models\Airport;
-use App\Models\Availability;
-use App\Models\Flight;
+use App\Models\Offer;
 use App\Models\User;
+use Database\Seeders\AirlineDemoSeeder;
+use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('flight search page is displayed', function () {
-    Airport::factory()->create(['name' => 'Istanbul Airport', 'code' => 'IST']);
+    createSellablePricingFixture();
 
     $this->get(route('home'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('flight-search')
-            ->has('airports', 1)
+            ->has('airports', 2)
             ->where('results', null),
         );
 });
 
-test('refreshing the search page redirects home', function () {
-    $this->get('/search')
-        ->assertRedirect(route('home'));
-});
-
-test('flight search page uses airline branding without geometric background graphics', function () {
-    $source = file_get_contents(resource_path('js/pages/flight-search.tsx'));
-
-    expect($source)
-        ->toContain('AeroVista Airlines')
-        ->toContain('Fly Istanbul, Europe, and beyond.')
-        ->toContain('Book a flight')
-        ->toContain('Flight status')
-        ->toContain('href={dashboard()}')
-        ->toContain('Dashboard')
-        ->toContain('!results && <OfferCarousel />')
-        ->toContain('results ? (')
-        ->toContain('Filter by feature')
-        ->toContain('Free seat selection')
-        ->toContain('No fares match the selected features.')
-        ->toContain('const fares = flight.fares')
-        ->toContain('Array.isArray(fares)')
-        ->not->toContain('AV / Official site')
-        ->not->toContain('Direct prices in USD')
-        ->not->toContain('Dynamic Pricer Air')
-        ->not->toContain('bg-[linear-gradient(90deg')
-        ->not->toContain('rotate-[-8deg]')
-        ->not->toContain('size-2 border');
-});
-
-test('basic search returns cheapest available A B C fares or not available', function () {
-    [$origin, $destination] = createAirportPair();
-    $flight = Flight::factory()->create([
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'date' => '2026-07-28',
-        'hour' => '09:30',
-        'flight_number' => 'DP100',
-    ]);
-
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class' => 'Economy Light',
-        'class_letters' => 'A',
-        'base_price_usd' => 120,
-        'count_available' => 3,
-        'seat_selection_free' => true,
-    ]);
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class' => 'Expanded Matrix Fare',
-        'class_letters' => 'A001',
-        'base_price_usd' => 40,
-        'count_available' => 3,
-    ]);
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class' => 'Economy Flex',
-        'class_letters' => 'B',
-        'base_price_usd' => 190,
-        'count_available' => 1,
-    ]);
+test('basic search creates immutable public package offers', function () {
+    $fixture = createSellablePricingFixture();
 
     $this->post(route('flight-search.search'), [
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
+        'origin_airport_id' => $fixture['origin']->id,
+        'destination_airport_id' => $fixture['destination']->id,
         'trip_type' => 'one_way',
-        'depart_date' => '2026-07-28',
+        'depart_date' => '2026-08-10',
         'search_mode' => 'basic',
-        'adults' => 2,
-        'children' => 0,
-        'babies' => 1,
+        'adults' => 1,
+        'children' => 1,
+        'babies' => 0,
     ])
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->component('flight-search')
+            ->component('flight-results')
             ->where('results.seat_passengers', 2)
-            ->where('results.outbound.0.flight_number', 'DP100')
-            ->where('results.outbound.0.fares.A.available', true)
-            ->where('results.outbound.0.fares.A.base_price_usd', 120)
-            ->where('results.outbound.0.fares.A.seat_selection_free', true)
-            ->where('results.outbound.0.fares.B.available', false)
-            ->where('results.outbound.0.fares.C.available', false),
+            ->where('results.outbound.0.flight_number', 'TK100')
+            ->where('results.outbound.0.fares.0.class', 'ExtraFly')
+            ->where('results.outbound.0.fares.0.available', true)
+            ->where('results.outbound.0.fares.0.checked_baggage_kg', 23),
         );
+
+    expect(Offer::query()->count())->toBe(1)
+        ->and(Offer::query()->first()->total_price)->toEqual('225.00');
 });
 
-test('full search shows every fare class including sold out classes', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
-    [$origin, $destination] = createAirportPair();
-    $flight = Flight::factory()->create([
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'date' => '2026-07-29',
-        'hour' => '14:10',
-        'flight_number' => 'DP200',
-    ]);
-
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class' => 'Economy Light',
-        'class_letters' => 'A',
-        'base_price_usd' => 110,
-        'count_available' => 0,
-    ]);
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class' => 'Business Full',
-        'class_letters' => 'J',
-        'base_price_usd' => 690,
-        'count_available' => 5,
-    ]);
-
-    $this->actingAs($admin)->post(route('flight-search.search'), [
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'trip_type' => 'one_way',
-        'depart_date' => '2026-07-29',
-        'search_mode' => 'full',
-        'adults' => 1,
-        'children' => 0,
-        'babies' => 0,
-    ])
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('flight-search')
-            ->has('results.outbound.0.fares', 2)
-            ->where('results.outbound.0.fares.0.class_letters', 'A')
-            ->where('results.outbound.0.fares.0.available', false)
-            ->where('results.outbound.0.fares.1.class_letters', 'J')
-            ->where('results.outbound.0.fares.1.available', true),
-        );
-});
-
-test('round trip search returns outbound and return legs', function () {
-    [$origin, $destination] = createAirportPair();
-
-    Flight::factory()->create([
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'date' => '2026-07-30',
-        'flight_number' => 'DP300',
-    ]);
-    Flight::factory()->create([
-        'origin_airport_id' => $destination->id,
-        'destination_airport_id' => $origin->id,
-        'date' => '2026-08-04',
-        'flight_number' => 'DP301',
-    ]);
-
-    $this->post(route('flight-search.search'), [
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
+test('round trip search creates separate outbound and return leg offers', function () {
+    $outbound = createSellablePricingFixture(['trip_type' => 'round_trip', 'leg_index' => 1, 'class_letters' => 'Q(R1)']);
+    $return = createSellablePricingFixture([
+        'origin' => 'LHR',
+        'destination' => 'IST',
+        'flight_number' => 'TK101',
+        'departure_at' => '2026-08-15 11:00',
         'trip_type' => 'round_trip',
-        'depart_date' => '2026-07-30',
-        'return_date' => '2026-08-04',
+        'leg_index' => 2,
+        'class_letters' => 'Q(R2)',
+    ]);
+
+    $this->actingAs(User::factory()->create())->post(route('flight-search.search'), [
+        'origin_airport_id' => $outbound['origin']->id,
+        'destination_airport_id' => $outbound['destination']->id,
+        'trip_type' => 'round_trip',
+        'depart_date' => '2026-08-10',
+        'return_date' => '2026-08-15',
         'search_mode' => 'basic',
         'adults' => 1,
         'children' => 0,
@@ -180,65 +71,61 @@ test('round trip search returns outbound and return legs', function () {
     ])
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('results.outbound.0.flight_number', 'DP300')
-            ->where('results.return.0.flight_number', 'DP301'),
+            ->where('results.outbound.0.fares.0.leg_index', 1)
+            ->where('results.outbound.0.fares.0.class_letters', 'Q(R1)')
+            ->where('results.return.0.fares.0.leg_index', 2)
+            ->where('results.return.0.fares.0.class_letters', 'Q(R2)'),
         );
+
+    expect($return['flight']->flight_number)->toBe('TK101')
+        ->and(Offer::query()->count())->toBe(2);
 });
 
-test('round trip search uses discounted round trip booking letters', function () {
-    [$origin, $destination] = createAirportPair();
-    $flight = Flight::factory()->create([
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'date' => '2026-07-31',
-        'flight_number' => 'DP400',
-    ]);
+test('seeded no change and no refund fares expose unavailable flexibility windows', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
 
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class' => 'Economy Light',
-        'class_letters' => 'A',
-        'fare_type' => 'one_way',
-        'base_price_usd' => 100,
-        'count_available' => 4,
-    ]);
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class' => 'Economy Light Roundtrip',
-        'class_letters' => 'A(R)',
-        'fare_type' => 'round_trip',
-        'base_price_usd' => 88,
-        'count_available' => 4,
-    ]);
+    try {
+        $this->seed(AirlineDemoSeeder::class);
 
-    $this->post(route('flight-search.search'), [
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'trip_type' => 'round_trip',
-        'depart_date' => '2026-07-31',
-        'return_date' => '2026-08-05',
-        'search_mode' => 'basic',
-        'adults' => 1,
-        'children' => 0,
-        'babies' => 0,
-    ])
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('results.outbound.0.fares.A.available', true)
-            ->where('results.outbound.0.fares.A.class_letters', 'A(R)')
-            ->where('results.outbound.0.fares.A.fare_type', 'round_trip')
-            ->where('results.outbound.0.fares.A.base_price_usd', 88),
-        );
+        $origin = Airport::query()->where('iata_code', 'IST')->firstOrFail();
+        $destination = Airport::query()->where('iata_code', 'LHR')->firstOrFail();
+
+        $this->post(route('flight-search.search'), [
+            'origin_airport_id' => $origin->id,
+            'destination_airport_id' => $destination->id,
+            'trip_type' => 'one_way',
+            'depart_date' => '2026-07-29',
+            'search_mode' => 'basic',
+            'adults' => 1,
+            'children' => 0,
+            'babies' => 0,
+        ])
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('results.outbound.0.fares.0.package_code', 'ECOFLY')
+                ->where('results.outbound.0.fares.0.latest_change_hours', null)
+                ->where('results.outbound.0.fares.0.change_fee_usd', 0)
+                ->where('results.outbound.0.fares.0.latest_refund_hours', null)
+                ->where('results.outbound.0.fares.0.refund_fee_usd', 0)
+                ->where('results.outbound.0.fares.1.package_code', 'EXTRAFLY')
+                ->where('results.outbound.0.fares.1.latest_change_hours', 24)
+                ->where('results.outbound.0.fares.1.change_fee_usd', 55)
+                ->where('results.outbound.0.fares.1.latest_refund_hours', null)
+                ->where('results.outbound.0.fares.1.refund_fee_usd', 0),
+            );
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('origin and destination must be different', function () {
-    $airport = Airport::factory()->create(['code' => 'IST']);
+    $fixture = createSellablePricingFixture();
 
     $this->from(route('home'))->post(route('flight-search.search'), [
-        'origin_airport_id' => $airport->id,
-        'destination_airport_id' => $airport->id,
+        'origin_airport_id' => $fixture['origin']->id,
+        'destination_airport_id' => $fixture['origin']->id,
         'trip_type' => 'one_way',
-        'depart_date' => '2026-07-30',
+        'depart_date' => '2026-08-10',
         'search_mode' => 'basic',
         'adults' => 1,
         'children' => 0,
@@ -247,49 +134,3 @@ test('origin and destination must be different', function () {
         ->assertRedirect(route('home'))
         ->assertSessionHasErrors('destination_airport_id');
 });
-
-test('non admins cannot use full search mode', function () {
-    [$origin, $destination] = createAirportPair();
-    $flight = Flight::factory()->create([
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'date' => '2026-08-01',
-        'flight_number' => 'DP500',
-    ]);
-
-    Availability::factory()->create([
-        'flight_id' => $flight->id,
-        'class_letters' => 'A',
-        'fare_type' => 'one_way',
-        'base_price_usd' => 120,
-        'count_available' => 4,
-    ]);
-
-    $this->post(route('flight-search.search'), [
-        'origin_airport_id' => $origin->id,
-        'destination_airport_id' => $destination->id,
-        'trip_type' => 'one_way',
-        'depart_date' => '2026-08-01',
-        'search_mode' => 'full',
-        'adults' => 1,
-        'children' => 0,
-        'babies' => 0,
-    ])
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('canUseFullSearch', false)
-            ->where('filters.search_mode', 'basic')
-            ->where('results.outbound.0.fares.A.available', true),
-        );
-});
-
-/**
- * @return array{Airport, Airport}
- */
-function createAirportPair(): array
-{
-    return [
-        Airport::factory()->create(['name' => 'Istanbul Airport', 'code' => 'IST']),
-        Airport::factory()->create(['name' => 'London Heathrow Airport', 'code' => 'LHR']),
-    ];
-}

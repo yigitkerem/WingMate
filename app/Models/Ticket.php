@@ -2,45 +2,40 @@
 
 namespace App\Models;
 
-use Database\Factories\TicketFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * @property int $id
- * @property int $availability_id
- * @property int $pnr_id
- * @property bool $flown
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
- */
-#[Fillable(['availability_id', 'pnr_id', 'flown'])]
+#[Fillable(['order_id', 'offer_id', 'ticket_number', 'passenger_type', 'status', 'issued_at'])]
 class Ticket extends Model
 {
-    /** @use HasFactory<TicketFactory> */
-    use HasFactory;
-
-    protected $attributes = [
-        'flown' => false,
-    ];
-
-    public function availability(): BelongsTo
+    /**
+     * @return BelongsTo<Order, $this>
+     */
+    public function order(): BelongsTo
     {
-        return $this->belongsTo(Availability::class);
+        return $this->belongsTo(Order::class);
     }
 
-    public function pnr(): BelongsTo
+    /**
+     * @return BelongsTo<Offer, $this>
+     */
+    public function offer(): BelongsTo
     {
-        return $this->belongsTo(Pnr::class);
+        return $this->belongsTo(Offer::class);
+    }
+
+    /**
+     * @return HasMany<TicketSegment, $this>
+     */
+    public function segments(): HasMany
+    {
+        return $this->hasMany(TicketSegment::class);
     }
 
     protected function casts(): array
     {
-        return [
-            'flown' => 'boolean',
-        ];
+        return ['issued_at' => 'datetime'];
     }
 }

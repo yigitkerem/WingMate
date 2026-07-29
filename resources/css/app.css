@@ -8,8 +8,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-    --font-sans:
-        Inter;
+    --font-sans: Inter;
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);

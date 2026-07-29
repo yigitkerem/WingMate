@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Users\Schemas;
 
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -19,6 +20,17 @@ class UserForm
                 TextInput::make('email')
                     ->label('Email address')
                     ->email()
+                    ->required(),
+                TextInput::make('passport_number')
+                    ->maxLength(32),
+                Select::make('loyalty_tier')
+                    ->options([
+                        'member' => 'Member',
+                        'classic_plus' => 'Classic Plus',
+                        'elite' => 'Elite',
+                        'elite_plus' => 'Elite Plus',
+                    ])
+                    ->default('member')
                     ->required(),
                 DateTimePicker::make('email_verified_at'),
                 TextInput::make('password')

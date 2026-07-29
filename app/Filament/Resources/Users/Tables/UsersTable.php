@@ -21,6 +21,10 @@ class UsersTable
                 TextColumn::make('email')
                     ->label('Email address')
                     ->searchable(),
+                TextColumn::make('passport_number')
+                    ->searchable(),
+                TextColumn::make('loyalty_tier')
+                    ->sortable(),
                 IconColumn::make('is_admin')
                     ->label('Admin')
                     ->boolean()

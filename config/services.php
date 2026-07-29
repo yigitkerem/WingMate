@@ -35,4 +35,17 @@ return [
         ],
     ],
 
+    'azure_openai' => [
+        'api_key' => env('AZURE_OPENAI_API_KEY', env('OPENAI_API_KEY')),
+        'base_url' => env('AZURE_OPENAI_BASE_URL'),
+        'model' => env('AGENT_MODEL', 'gpt-5.4-mini'),
+    ],
+
+    'thy_mcp' => [
+        'url' => env('THY_MCP_URL'),
+        'token' => env('THY_MCP_TOKEN'),
+        'token_file' => env('THY_MCP_TOKEN_FILE', base_path('temp/data/thy_tokens.json')),
+        'client_name' => env('THY_MCP_CLIENT_NAME', env('APP_NAME', 'Dynamic Pricer')),
+    ],
+
 ];

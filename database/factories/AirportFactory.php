@@ -10,16 +10,17 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class AirportFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
+        $code = fake()->unique()->lexify('???');
+
         return [
-            'name' => fake()->city().' International Airport',
-            'code' => strtoupper(fake()->unique()->lexify('???')),
+            'iata_code' => strtoupper($code),
+            'icao_code' => strtoupper('L'.$code),
+            'name' => fake()->city().' Airport',
+            'city' => fake()->city(),
+            'country' => fake()->countryCode(),
+            'timezone' => fake()->timezone(),
         ];
     }
 }

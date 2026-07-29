@@ -1,0 +1,2746 @@
+<!doctype html>
+<html lang="tr" data-theme="thy">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dynamic Pricer · Wingo AI</title>
+  <link rel="icon" type="image/svg+xml" href="/static/thy-emblem.svg">
+  <link rel="apple-touch-icon" href="/static/thy-emblem.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+      boxShadow: { 'card': 'none', 'card-hover': 'none', 'search': 'none' },
+    }}};
+  </script>
+  <style>
+    :root[data-theme="thy"] {
+      --accent: #E81932; --accent-dark: #C90019; --accent-darker: #8B0012;
+      --accent-50: #FEF2F3; --accent-100: #FDE3E6;
+      --glass: rgba(255,255,255,.72);
+      --surface: #F7F8FA;
+    }
+    :root[data-theme="case"] {
+      --accent: #3B7DDB; --accent-dark: #1A5DC0; --accent-darker: #0C3D7A;
+      --accent-50: #EEF4FC; --accent-100: #D9E6F7;
+      --glass: rgba(255,255,255,.72);
+      --surface: #F5F7FA;
+    }
+    .acc-bg { background-color: var(--accent-dark); }
+    .acc-bg-hover:hover { background-color: var(--accent-darker); }
+    .acc-text { color: var(--accent-dark); }
+    .acc-50 { background-color: var(--accent-50); }
+    .acc-focus:focus { --tw-ring-color: var(--accent); border-color: var(--accent); }
+    .theme-thy-only, .theme-case-only { display: none; }
+    :root[data-theme="thy"] .theme-thy-only { display: block; }
+    :root[data-theme="case"] .theme-case-only { display: block; }
+
+    * { transition-timing-function: cubic-bezier(.4,0,.2,1); }
+    body { background-color: var(--surface); }
+
+    .ic { width: 1.1em; height: 1.1em; stroke: currentColor; fill: none;
+          stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+          display: inline-block; vertical-align: -0.18em; flex-shrink: 0; }
+
+    .fade-in { animation: fadeIn .45s cubic-bezier(.4,0,.2,1) both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .typing span { animation: blink 1.2s infinite; display:inline-block; }
+    .typing span:nth-child(2){ animation-delay:.2s } .typing span:nth-child(3){ animation-delay:.4s }
+    @keyframes blink { 0%,80%,100%{opacity:.25} 40%{opacity:1} }
+    /* Autocomplete: keyboard-highlighted row */
+    .ac-active { background: var(--accent-50) !important; box-shadow: inset 3px 0 0 var(--accent); }
+    .ac-active span:first-child { background: var(--accent-100) !important; color: var(--accent-dark) !important; }
+
+    /* Voice input (speech-to-text) */
+    @keyframes micPulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(232,25,50,.45); }
+      50%     { box-shadow: 0 0 0 8px rgba(232,25,50,0); }
+    }
+    #micBtn.listening {
+      background: var(--accent-dark) !important; color: #fff !important;
+      animation: micPulse 1.4s ease-out infinite;
+    }
+    #micStatus { display:none; }
+    #micStatus.on { display:flex; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); border-radius: 6px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.22); }
+
+    .thy-hero {
+      background:
+        linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 20%, rgba(0,0,0,0) 70%, rgba(0,0,0,0.5) 100%),
+        url('/static/team_hero.jpg') center 60%/cover no-repeat;
+      position: relative;
+      overflow: hidden;
+    }
+    .thy-tab-active { color: var(--accent-dark); box-shadow: inset 0 -3px 0 var(--accent-dark); }
+
+    /* Glass effect for top controls */
+    .glass-pill {
+      background: rgba(255,255,255,.85);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.9);
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+
+    /* Premium input styling */
+    .premium-input {
+      border: 1px solid #E2E8F0;
+      background: #FAFBFC;
+      transition: all .2s;
+    }
+    .premium-input:hover { border-color: #CBD5E1; background: #fff; }
+    .premium-input:focus { border-color: var(--accent); background: #fff;
+      box-shadow: 0 0 0 3px var(--accent-50), 0 1px 2px rgba(0,0,0,.05); }
+
+    /* Premium button */
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent-darker));
+      box-shadow: 0 2px 4px rgba(0,0,0,.1), 0 4px 12px -2px var(--accent-50);
+      transition: all .2s;
+    }
+    .btn-primary:hover {
+      box-shadow: 0 4px 8px rgba(0,0,0,.15), 0 8px 20px -4px var(--accent-100);
+      transform: translateY(-1px);
+    }
+    .btn-primary:active { transform: translateY(0) scale(.98); }
+
+    /* Card hover effect */
+    .hover-card {
+      transition: all .25s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 8px 24px -4px rgba(0,0,0,.06);
+    }
+    .hover-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,.06), 0 20px 40px -8px rgba(0,0,0,.10);
+      transform: translateY(-2px);
+    }
+
+    /* Feature card */
+    .feat-card {
+      background: #fff;
+      border: 1px solid rgba(226,232,240,.8);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      transition: all .3s;
+      position: relative; overflow: hidden;
+    }
+    .feat-card::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent-dark), var(--accent));
+      opacity: 0; transition: opacity .3s;
+    }
+    .feat-card:hover { border-color: var(--accent-100);
+      box-shadow: 0 8px 30px -8px rgba(0,0,0,.10);
+      transform: translateY(-3px);
+    }
+    .feat-card:hover::after { opacity: 1; }
+
+    /* Fare card selected glow */
+    .fare-glow {
+      box-shadow: inset 0 0 0 2px var(--accent-dark), 0 4px 16px -4px var(--accent-100);
+    }
+
+    /* Fullscreen chat mode */
+    #chatPanel.chat-fullscreen {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+    #chatPanel.chat-fullscreen #messages {
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #chatPanel.chat-fullscreen .chat-input-wrap {
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #chatPanel.chat-fullscreen .chat-header-inner {
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Chat bubble animations */
+    .chat-bubble-user {
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent-darker));
+    }
+    .chat-bubble-bot {
+      background: #fff;
+      border: 1px solid #E2E8F0;
+    }
+
+    /* Pulse animation for FAB */
+    @keyframes fabPulse {
+      0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+      50% { box-shadow: 0 4px 12px rgba(0,0,0,.15), 0 0 0 8px var(--accent-50); }
+    }
+    #chatBtn { animation: fabPulse 3s ease-in-out infinite; }
+    #chatBtn:hover { animation: none; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+
+    /* Route illustration banner above flight results */
+    .route-banner-container {
+      background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 45%, #881337 100%);
+      box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+    @keyframes cloudFloat1 {
+      0%, 100% { transform: translateX(0px); }
+      50% { transform: translateX(18px); }
+    }
+    @keyframes cloudFloat2 {
+      0%, 100% { transform: translateX(0px); }
+      50% { transform: translateX(-15px); }
+    }
+    .anim-cloud-1 { animation: cloudFloat1 12s ease-in-out infinite; }
+    .anim-cloud-2 { animation: cloudFloat2 15s ease-in-out infinite; }
+
+    * { letter-spacing: 0 !important; }
+    [class*="shadow"], [class*="drop-shadow"], .glass-pill, .premium-input:focus, .btn-primary,
+    .btn-primary:hover, .hover-card, .hover-card:hover, .feat-card:hover, .fare-glow,
+    .route-banner-container, #chatBtn, #chatBtn:hover { box-shadow: none !important; filter: none !important; }
+    [class*="ring"] {
+      --tw-ring-offset-shadow: 0 0 #0000 !important;
+      --tw-ring-shadow: 0 0 #0000 !important;
+      box-shadow: none !important;
+    }
+    [class*="border-2"], [class*="border-[2"], [class*="border-[3"] {
+      border-width: 1px !important;
+    }
+    [class*="rounded"] {
+      border-radius: 6px !important;
+    }
+    .rounded-full, [class*="rounded-full"] {
+      border-radius: 8px !important;
+    }
+    [class*="hover:-translate"], [class*="hover:scale"], [class*="group-hover:scale"] { transform: none !important; }
+    .font-bold { font-weight: 600 !important; }
+    .font-extrabold, .font-black { font-weight: 650 !important; }
+    button, a, summary, [onclick], [role="button"], .cursor-pointer {
+      cursor: pointer;
+      transition-property: background-color, border-color, color, opacity, outline-color;
+      transition-duration: .18s;
+      transition-timing-function: cubic-bezier(.4,0,.2,1);
+    }
+    button:focus-visible, a:focus-visible, summary:focus-visible, [role="button"]:focus-visible {
+      outline: 2px solid #CBD5E1;
+      outline-offset: 2px;
+    }
+    input:focus-visible,
+    textarea:focus-visible {
+      outline: none;
+    }
+    .btn-primary:hover { background: var(--accent-darker); transform: none; }
+    .btn-primary:active { transform: none; }
+    .hover-card:hover, .feat-card:hover { transform: none; }
+
+    .lookup-card {
+      overflow: visible;
+      position: relative;
+      z-index: 80;
+    }
+    .lookup-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+    .field-shell {
+      height: 58px;
+      border: 1px solid #E2E8F0;
+      background: #FAFBFC;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+      padding: 7px 12px;
+      transition: background-color .18s, border-color .18s, outline-color .18s;
+    }
+    .field-shell:hover,
+    .field-shell:focus-within,
+    .field-shell[aria-expanded="true"] {
+      border-color: var(--accent-dark);
+      background: #fff;
+    }
+    .field-caption {
+      display: block;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .field-input {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      outline: none;
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .field-input:focus-visible {
+      outline: none !important;
+      box-shadow: none !important;
+      border-color: transparent !important;
+    }
+    .field-shell .field-input:focus,
+    .field-shell .field-input:focus-visible {
+      border: 0 !important;
+      outline: none !important;
+      box-shadow: none !important;
+      --tw-ring-offset-shadow: 0 0 #0000 !important;
+      --tw-ring-shadow: 0 0 #0000 !important;
+    }
+    .route-field-shell:focus-within {
+      border-color: #CBD5E1;
+    }
+    .swap-button {
+      width: 30px;
+      height: 30px;
+      border-radius: 9999px !important;
+      background: #F8FAFC;
+      color: #475569;
+      border: 1px solid #E2E8F0;
+    }
+    .swap-button:hover {
+      background: var(--accent-50);
+      color: var(--accent-dark);
+      border-color: var(--accent-100);
+    }
+    .trip-option {
+      border: 1px solid #E2E8F0;
+      background: #fff;
+      color: #475569;
+    }
+    .trip-option:hover, .trip-option[aria-checked="true"] {
+      border-color: var(--accent-dark);
+      color: var(--accent-dark);
+      background: var(--accent-50);
+    }
+    .popup-panel {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      max-height: 0;
+      overflow: hidden;
+      transition: opacity .18s ease, max-height .22s ease, visibility .18s ease;
+    }
+    .popup-panel.is-open {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      max-height: 420px;
+      overflow: visible;
+      z-index: 120;
+    }
+    .airport-popup {
+      min-width: min(440px, calc(100vw - 48px));
+      width: max-content;
+      max-width: min(520px, calc(100vw - 48px));
+    }
+    .airport-list {
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    .airport-row:hover,
+    .airport-row.ac-active {
+      background: var(--accent-50) !important;
+      color: #7f1d1d;
+    }
+    .joined-picker {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+      height: 58px;
+      min-height: 0;
+      align-items: stretch;
+      box-sizing: border-box;
+      padding: 0;
+      gap: 0;
+    }
+    .joined-picker.is-one-way { grid-template-columns: 1fr; }
+    .joined-picker.is-one-way #returnPreviewSegment { display: none; }
+    .joined-picker:hover,
+    .joined-picker[aria-expanded="true"] {
+      border-color: var(--accent-dark);
+      background: #fff;
+    }
+    .joined-segment + .joined-segment { border-left: 1px solid #E2E8F0; }
+    .joined-segment {
+      min-height: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 5px;
+    }
+    .date-day { font-size: 15px; line-height: 1; font-weight: 650; }
+    .date-month { font-size: 11px; color: #64748b; font-weight: 600; }
+    .date-empty { min-height: 15px; }
+    #paxButtonText {
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .flight-panel-btn {
+      min-height: 112px;
+      border: 0;
+      background: #fff;
+      text-align: left;
+      transition: background-color .18s, border-color .18s, color .18s;
+    }
+    .flight-panel-btn + .flight-panel-btn {
+      border-top: 1px solid #E2E8F0;
+    }
+    @media (min-width: 1024px) {
+      .flight-panel-btn + .flight-panel-btn {
+        border-top: 0;
+        border-left: 1px solid #E2E8F0;
+      }
+    }
+    .flight-panel-btn:hover,
+    .flight-panel-btn.is-active {
+      background: #F8FAFC;
+      color: #0F172A;
+    }
+    .flight-panel-btn:disabled {
+      opacity: .46;
+      cursor: not-allowed;
+    }
+    .flight-panel-btn:focus-visible {
+      outline: 2px solid #CBD5E1;
+      outline-offset: -2px;
+    }
+    .fare-compare-table th,
+    .fare-compare-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #E2E8F0;
+      vertical-align: middle;
+      text-align: center;
+    }
+    .fare-matrix-wrap {
+      overflow-x: auto;
+      overflow-y: visible;
+      padding: 34px 14px 24px;
+    }
+    .fare-compare-table {
+      border: 1px solid #CBD5E1;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: #fff;
+      margin-top: 8px;
+    }
+    .fare-compare-table th + th,
+    .fare-compare-table td + td {
+      border-left: 1px solid #E2E8F0;
+    }
+    .fare-compare-table thead th {
+      padding-top: 12px;
+      padding-bottom: 12px;
+      background: #F8FAFC;
+      border-bottom-color: #CBD5E1;
+    }
+    .fare-compare-table thead th:first-child,
+    .fare-compare-table tbody td:first-child,
+    .fare-compare-table tfoot td:first-child {
+      background: #F8FAFC;
+      border-right: 1px solid #CBD5E1;
+    }
+    .fare-compare-table tbody tr:nth-child(even) td:not(.fare-suggested-col) {
+      background: #FAFBFC;
+    }
+    .fare-compare-table tbody tr:hover td:not(.fare-suggested-col) {
+      background: #F8FAFC;
+    }
+    .fare-matrix-title,
+    .fare-row-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #0F172A;
+      width: 100%;
+    }
+    .fare-matrix-title {
+      font-size: 14px;
+      line-height: 1.2;
+      font-weight: 700 !important;
+    }
+    .fare-row-label {
+      font-size: 12px;
+      line-height: 1.25;
+      font-weight: 700 !important;
+    }
+    .fare-class-title {
+      display: block;
+      font-size: 13px;
+      line-height: 1.15;
+      font-weight: 700 !important;
+      color: #0F172A;
+    }
+    .fare-suggested-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      padding: 5px 12px;
+      border: 1px solid var(--accent-dark);
+      background: var(--accent-dark);
+      color: #fff;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 700 !important;
+    }
+    .fare-compare-table th.fare-suggested-col,
+    .fare-compare-table td.fare-suggested-col {
+      position: relative;
+      z-index: 2;
+      min-width: 320px;
+      width: 320px;
+      padding-left: 26px;
+      padding-right: 26px;
+      background: #FFF1F2;
+      border-left: 1px solid var(--accent-dark) !important;
+      border-right: 1px solid var(--accent-dark) !important;
+    }
+    .fare-compare-table thead th.fare-suggested-col {
+      position: relative;
+      top: -28px;
+      padding-top: 38px;
+      padding-bottom: 36px;
+      background: linear-gradient(180deg, #FFE4E8 0%, #FFF1F2 100%);
+      border-top: 1px solid var(--accent-dark);
+      border-bottom: 1px solid var(--accent-dark);
+    }
+    .fare-compare-table thead th.fare-suggested-col::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--accent-dark);
+    }
+    .fare-compare-table tfoot td.fare-suggested-col {
+      top: 16px;
+      border-bottom: 1px solid var(--accent-dark);
+      padding-top: 20px;
+      padding-bottom: 22px;
+      background: #FFE4E8;
+    }
+    .fare-suggested-col .fare-class-title {
+      font-size: 30px;
+      line-height: 1;
+      color: var(--accent-dark);
+    }
+    .fare-suggested-col .fare-price {
+      margin-top: 10px;
+      font-size: 42px;
+      color: var(--accent-dark);
+    }
+    .fare-suggested-col .fare-cell-value {
+      font-size: 14px;
+      color: #0F172A;
+    }
+    .fare-suggested-note {
+      display: block;
+      margin-top: 8px;
+      font-size: 11px;
+      line-height: 1.2;
+      font-weight: 600;
+      color: #7F1D1D;
+    }
+    .fare-suggested-col .buy-btn {
+      background: var(--accent-dark) !important;
+      border-color: var(--accent-dark) !important;
+      color: #fff !important;
+      padding-top: 12px;
+      padding-bottom: 12px;
+      font-size: 14px;
+    }
+    .fare-suggested-col .buy-btn:hover {
+      background: var(--accent-darker) !important;
+      border-color: var(--accent-darker) !important;
+    }
+    .fare-price {
+      display: block;
+      margin-top: 4px;
+      font-size: 16px;
+      line-height: 1;
+      font-weight: 700 !important;
+      color: #0F172A;
+    }
+    .fare-cell-value {
+      font-size: 12px;
+      line-height: 1.3;
+      font-weight: 600;
+      color: #1E293B;
+    }
+    .fare-row-icon {
+      width: 16px;
+      height: 16px;
+      color: #475569;
+      flex-shrink: 0;
+    }
+    .calendar-day {
+      min-height: 30px;
+      border: 1px solid transparent;
+    }
+    .calendar-day:hover {
+      background: var(--accent-50);
+      border-color: var(--accent-100);
+    }
+    .calendar-day.is-selected {
+      background: var(--accent-dark);
+      color: #fff;
+    }
+    .calendar-day.is-in-range {
+      background: var(--accent-50);
+      border-color: var(--accent-100);
+      color: var(--accent-darker);
+    }
+    .calendar-day.is-preview {
+      background: var(--accent-100);
+      border-color: var(--accent);
+      color: var(--accent-darker);
+    }
+    .custom-check {
+      width: 20px;
+      height: 20px;
+      border: 1px solid #CBD5E1;
+      background: #fff;
+      color: transparent;
+    }
+    .custom-check-wrap:hover .custom-check,
+    .custom-check-wrap:focus-visible .custom-check {
+      border-color: var(--accent-dark);
+      background: var(--accent-50);
+    }
+    .custom-check-wrap[aria-checked="true"] .custom-check {
+      border-color: var(--accent-dark);
+      background: var(--accent-dark);
+      color: #fff;
+    }
+  </style>
+</head>
+<body class="text-[#1A1A1A] antialiased min-h-screen flex flex-col font-sans" style="background: var(--surface);">
+
+  <!-- SVG IKON SPRITE -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-plane" viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-bag" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+    <symbol id="i-trend-down" viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+    <symbol id="i-suitcase" viewBox="0 0 24 24"><path d="M9 6V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1"/><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 10v6M16 10v6"/></symbol>
+    <symbol id="i-seat" viewBox="0 0 24 24"><path d="M7 3v9a3 3 0 0 0 3 3h7"/><path d="M5 21h14"/><path d="M17 15l2 6"/><path d="M7 12H4a2 2 0 0 0-2 2v1h8"/></symbol>
+    <symbol id="i-change" viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M20 20v-6h-6"/><path d="M20 9A8 8 0 0 0 6.34 5.34L4 10"/><path d="M4 15a8 8 0 0 0 13.66 3.66L20 14"/></symbol>
+    <symbol id="i-refund" viewBox="0 0 24 24"><path d="M3 7h18v10H3z"/><circle cx="12" cy="12" r="2.5"/><path d="M7 7a4 4 0 0 1-4 4M17 7a4 4 0 0 0 4 4M7 17a4 4 0 0 0-4-4M17 17a4 4 0 0 1 4-4"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+    <symbol id="i-fast" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 10-12h-7l1-8z"/></symbol>
+    <!-- Wingo maskotu (ozgun onden bakan pilot-kaz) -->
+    <symbol id="wingo" viewBox="0 0 64 64">
+      <!-- kulak kapaklari -->
+      <ellipse cx="13.5" cy="35" rx="5" ry="8" fill="#5C3B22"/>
+      <ellipse cx="50.5" cy="35" rx="5" ry="8" fill="#5C3B22"/>
+      <ellipse cx="13.5" cy="36" rx="2.4" ry="4.6" fill="#78502F"/>
+      <ellipse cx="50.5" cy="36" rx="2.4" ry="4.6" fill="#78502F"/>
+      <!-- kafa -->
+      <circle cx="32" cy="35" r="19" fill="#FFFFFF"/>
+      <!-- yanaklar -->
+      <circle cx="20.5" cy="40" r="3" fill="#F7B9B0" opacity=".5"/>
+      <circle cx="43.5" cy="40" r="3" fill="#F7B9B0" opacity=".5"/>
+      <!-- gozler -->
+      <ellipse cx="26" cy="35.5" rx="2.7" ry="3.4" fill="#2B2B31"/>
+      <ellipse cx="38" cy="35.5" rx="2.7" ry="3.4" fill="#2B2B31"/>
+      <circle cx="27" cy="34.3" r="1.05" fill="#fff"/>
+      <circle cx="39" cy="34.3" r="1.05" fill="#fff"/>
+      <!-- gaga -->
+      <path d="M25 41 Q32 39.5 39 41 Q37.5 46.5 32 46.5 Q26.5 46.5 25 41 Z" fill="#F5A623"/>
+      <path d="M32 41 L32 45.6" stroke="#DB8E15" stroke-width="0.8"/>
+      <!-- pilot baslik kubbesi -->
+      <path d="M13 34 Q11 12 32 12 Q53 12 51 34 Q42 28.5 32 28.5 Q22 28.5 13 34 Z" fill="#5C3B22"/>
+      <path d="M13.5 33 Q32 27 50.5 33" stroke="#4A2F1B" stroke-width="1" fill="none" stroke-dasharray="1.8 1.8"/>
+      <path d="M20 16 Q32 12 44 16" stroke="#754E2C" stroke-width="2" fill="none" opacity=".7"/>
+      <!-- alina itilmis gozluk -->
+      <path d="M12 25 Q32 17 52 25" stroke="#2E2E36" stroke-width="3.2" fill="none"/>
+      <circle cx="23" cy="24" r="6" fill="#BFE3F2" stroke="#2E2E36" stroke-width="2.4"/>
+      <circle cx="41" cy="24" r="6" fill="#BFE3F2" stroke="#2E2E36" stroke-width="2.4"/>
+      <path d="M29 24 L35 24" stroke="#2E2E36" stroke-width="2.4"/>
+      <ellipse cx="21" cy="22" rx="1.8" ry="2.3" fill="#fff" opacity=".85"/>
+      <ellipse cx="39" cy="22" rx="1.8" ry="2.3" fill="#fff" opacity=".85"/>
+      <!-- kirmizi atki -->
+      <path d="M17 50 Q32 57 47 50 L45 55 Q32 60 19 55 Z" fill="#E81932"/>
+      <path d="M44 52 L48 58 L43 57 Z" fill="#C90019"/>
+    </symbol>
+  </svg>
+
+  <!-- TEMA + DIL SECICI -->
+  <div class="fixed top-2.5 right-3 z-[60] flex items-center gap-2">
+    <div class="glass-pill flex items-center rounded-full p-0.5 text-[11px] font-bold">
+      <button id="langTr" class="lang-btn px-2.5 py-1.5 rounded-full transition">TR</button>
+      <button id="langEn" class="lang-btn px-2.5 py-1.5 rounded-full transition">EN</button>
+    </div>
+    <div class="glass-pill flex items-center rounded-full p-0.5 text-[11px] font-bold">
+      <button id="themeThy" class="theme-btn px-3 py-1.5 rounded-full transition">THY</button>
+      <button id="themeCase" class="theme-btn px-3 py-1.5 rounded-full transition">Case</button>
+    </div>
+  </div>
+
+  <!-- THY TEMASI -->
+  <div class="theme-thy-only">
+    <header class="thy-hero text-white relative">
+      <!-- Top Strip -->
+      <div class="text-white/90 text-[13px] font-medium relative z-20">
+        <div class="max-w-6xl mx-auto px-6 py-2 flex items-center justify-between" style="padding-right:230px">
+          <span data-i18n="topStrip">Türkiye · Türkçe · TRY</span>
+          <div class="flex items-center gap-4">
+            <span class="hover:text-white cursor-pointer transition-colors" data-i18n="help">Yardım</span>
+            <span class="hover:text-white cursor-pointer transition-colors" data-i18n="deals">Kampanyalar</span>
+            <span class="hover:text-white cursor-pointer transition-colors">Miles&Smiles</span>
+          </div>
+        </div>
+      </div>
+      <!-- Main Nav (Glassy) -->
+      <div class="relative z-20">
+        <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <a href="/" class="flex items-center gap-3 cursor-pointer group" title="Ana Sayfaya Dön ve Aramayı Sıfırla">
+            <img src="/static/thy-emblem.svg" class="w-12 h-12 rounded-full shadow-md group-hover:scale-105 transition-transform object-contain bg-white" alt="Türk Hava Yolları Logo">
+            <div class="leading-none">
+              <div class="text-[23px] font-black tracking-tight text-white drop-shadow-sm">TURKISH <span class="text-white/90 font-bold">AIRLINES</span></div>
+              <div class="text-[11px] text-white/70 tracking-[.25em] mt-1 font-bold drop-shadow-sm" data-i18n="thyLogoSub">WIDEN YOUR WORLD</div>
+            </div>
+          </a>
+          <nav class="hidden md:flex items-center gap-7 text-[15px] font-bold text-white/90">
+            <span class="hover:text-white cursor-pointer transition-colors drop-shadow-sm" data-i18n="navPlan" onclick="openThy('status')">Uçuş Planlama</span>
+            <span class="hover:text-white cursor-pointer transition-colors drop-shadow-sm" data-i18n="navManage" onclick="openThy('manage')">Check-in ve Yönet</span>
+            <span class="hover:text-white cursor-pointer transition-colors drop-shadow-sm">Miles&Smiles</span>
+            <span class="text-white/30">|</span>
+            <button type="button" class="chatOpenBtn hover:text-white transition-colors inline-flex items-center gap-1.5 drop-shadow-sm"><svg class="ic"><use href="#i-chat"/></svg> <span data-i18n="navChat">Wingo</span></button>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="document.getElementById('joinModal').style.display='flex'" class="px-4 py-1.5 rounded-md text-[13px] font-bold border border-white/80 text-white hover:bg-white hover:text-[var(--accent-dark)] transition-all" data-i18n="navJoin">Join</button>
+              <button type="button" onclick="document.getElementById('loginModal').style.display='flex'" class="px-4 py-1.5 rounded-md text-[13px] font-bold border border-white/80 text-white hover:bg-white hover:text-[var(--accent-dark)] transition-all" data-i18n="navLogin">Log in</button>
+            </div>
+          </nav>
+        </div>
+      </div>
+      
+      <!-- Hero Content -->
+      <div class="max-w-6xl mx-auto px-6 pt-28 pb-64 relative z-10">
+        <h1 class="text-3xl md:text-[44px] font-black tracking-tight drop-shadow-md leading-tight">Widen Your World</h1>
+        <p class="text-white/90 text-[15px] mt-3 font-medium drop-shadow-md" data-i18n="heroSubThy">300'den fazla noktaya uçuş · net fiyatlar · kolay rezervasyon</p>
+      </div>
+    </header>
+  </div>
+
+  <!-- CASE STUDY TEMASI -->
+  <div class="theme-case-only">
+    <div class="bg-white border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between" style="padding-right:190px">
+        <a href="/" class="flex items-center gap-2.5 cursor-pointer group" title="Ana Sayfaya Dön ve Aramayı Sıfırla">
+          <img src="/static/thy-emblem.svg" class="w-9 h-9 rounded-full shadow-sm group-hover:scale-105 transition-transform object-contain" alt="THY Logo">
+          <div class="leading-none">
+            <div class="text-[17px] font-extrabold tracking-tight">Dynamic <span class="text-[var(--accent-dark)]">Pricer</span></div>
+            <div class="text-[10px] text-slate-400 mt-0.5 tracking-wide font-bold" data-i18n="caseSub">PRICING SYSTEMS · AI AGENT MVP · GRUP 4</div>
+          </div>
+        </a>
+        <div class="hidden sm:flex items-center gap-2 text-[11px] font-semibold">
+          <span class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full"><svg class="ic"><use href="#i-db"/></svg> <span data-i18n="badgeOurs">Bizim sistem</span></span>
+          <span class="inline-flex items-center gap-1.5 acc-50 acc-text px-2.5 py-1 rounded-full"><svg class="ic"><use href="#i-globe"/></svg> <span data-i18n="badgeThy">THY Canlı MCP</span></span>
+          <button type="button" class="chatOpenBtn inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full ring-1 ring-emerald-200 hover:bg-emerald-100 transition"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> <span data-i18n="badgeAgent">Asistan</span></button>
+        </div>
+      </div>
+    </div>
+    <header class="text-white relative overflow-hidden" style="background: linear-gradient(110deg, rgba(12,61,122,0.88), rgba(26,93,192,0.82) 55%, rgba(59,125,219,0.78)), url('/static/case_hero.png') center/cover no-repeat;">
+      <div class="max-w-6xl mx-auto px-6 pt-12 pb-40 relative z-10">
+        <div class="inline-flex items-center gap-2 bg-white/15 backdrop-blur px-3 py-1 rounded-full text-[11px] font-bold tracking-wide mb-4">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse"></span>
+          <span id="kpiProvider">Azure OpenAI · gpt-5.4-mini</span>
+        </div>
+        <h1 class="text-3xl md:text-[44px] font-black tracking-tight leading-tight drop-shadow-sm" data-i18n="heroTitleCase">Nereye uçuyoruz?</h1>
+        <p class="text-white/90 text-[15px] mt-3 font-medium drop-shadow-sm" data-i18n="heroSubCase">Havacılık Gelir Yönetimi Vaka Çalışması · Yılmaz Ailesi senaryosu · 2 MCP kaynağı</p>
+        <!-- Canli KPI seridi -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-8 max-w-3xl">
+          <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 ring-1 ring-white/15">
+            <div class="text-[22px] font-black leading-none" id="kpiFlights">—</div>
+            <div class="text-[10px] font-bold text-white/70 tracking-wider mt-1.5" data-i18n="kpiFlightsL">UÇUŞ</div>
+          </div>
+          <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 ring-1 ring-white/15">
+            <div class="text-[22px] font-black leading-none" id="kpiFares">—</div>
+            <div class="text-[10px] font-bold text-white/70 tracking-wider mt-1.5" data-i18n="kpiFaresL">FARE SATIRI</div>
+          </div>
+          <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 ring-1 ring-white/15">
+            <div class="text-[22px] font-black leading-none" id="kpiTools">—</div>
+            <div class="text-[10px] font-bold text-white/70 tracking-wider mt-1.5" data-i18n="kpiToolsL">AGENT TOOL</div>
+          </div>
+          <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 ring-1 ring-white/15">
+            <div class="text-[22px] font-black leading-none" id="kpiPnrs">—</div>
+            <div class="text-[10px] font-bold text-white/70 tracking-wider mt-1.5" data-i18n="kpiPnrsL">REZERVASYON</div>
+          </div>
+        </div>
+      </div>
+    </header>
+  </div>
+
+  <main class="flex-1 max-w-6xl mx-auto w-full px-6 pb-20 -mt-14 relative z-20">
+    <div class="lookup-card bg-white rounded-2xl shadow-search ring-1 ring-slate-200/60 fade-in">
+      <div class="theme-thy-only border-b border-slate-100">
+        <div class="flex text-[13px] font-bold text-slate-500">
+          <span class="px-5 py-3.5 thy-tab-active cursor-default inline-flex items-center gap-2"><svg class="ic"><use href="#i-plane"/></svg> <span data-i18n="tabSearch">Uçuş ara</span></span>
+          <button type="button" data-thy="checkin" class="thy-tab px-5 py-3.5 hover:text-[var(--accent-dark)] inline-flex items-center gap-2 transition"><svg class="ic"><use href="#i-bag"/></svg> <span data-i18n="tabCheckin">Check-in</span></button>
+          <button type="button" data-thy="manage" class="thy-tab px-5 py-3.5 hover:text-[var(--accent-dark)] hidden sm:inline-flex items-center gap-2 transition"><svg class="ic"><use href="#i-clipboard"/></svg> <span data-i18n="tabManage">Rezervasyonunu yönet</span></button>
+          <button type="button" data-thy="status" class="thy-tab px-5 py-3.5 hover:text-[var(--accent-dark)] hidden sm:inline-flex items-center gap-2 transition"><svg class="ic"><use href="#i-clock"/></svg> <span data-i18n="tabStatus">Uçuş durumu</span></button>
+        </div>
+      </div>
+      <form method="post" action="/search" class="p-6">
+        <input type="hidden" name="trip_type" id="tripTypeInput" value="{{ form.trip_type or 'one_way' }}" />
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_0_minmax(0,1fr)_minmax(210px,.95fr)_minmax(180px,.8fr)_148px] gap-y-4 gap-x-1 items-end">
+          <!-- NEREDEN (Origin Autocomplete) -->
+          <div class="relative">
+            <div class="field-shell route-field-shell rounded-xl">
+              <span class="field-caption" data-i18n="lblFrom">NEREDEN</span>
+              <input type="text" id="originInput" autocomplete="off" placeholder="Havalimanı veya şehir" class="field-input pr-6" />
+              <input type="hidden" name="origin" id="originValue" value="{{ form.origin or 'IST' }}" />
+            </div>
+            <div id="originDropdown" class="popup-panel airport-popup absolute top-full left-0 mt-1 bg-white rounded-xl border border-slate-200 z-50 divide-y divide-slate-100"></div>
+          </div>
+          <div class="relative z-30 flex md:pb-[1px] justify-center md:-mx-6 pointer-events-none">
+            <button type="button" onclick="swapAirports()" title="Kalkış ve Varış Değiştir" class="swap-button pointer-events-auto flex items-center justify-center transition" aria-label="Kalkış ve varış noktalarını değiştir">
+              <svg class="ic" viewBox="0 0 24 24" style="width:15px;height:15px;stroke-width:2.3">
+                <path d="M7 7h11"/>
+                <path d="m15 4 3 3-3 3"/>
+                <path d="M17 17H6"/>
+                <path d="m9 14-3 3 3 3"/>
+              </svg>
+            </button>
+          </div>
+          <!-- NEREYE (Destination Autocomplete) -->
+          <div class="relative">
+            <div class="field-shell route-field-shell rounded-xl">
+              <span class="field-caption" data-i18n="lblTo">NEREYE</span>
+              <input type="text" id="destInput" autocomplete="off" placeholder="Havalimanı veya şehir" class="field-input" />
+              <input type="hidden" name="destination" id="destValue" value="{{ form.destination or 'LHR' }}" />
+            </div>
+            <div id="destDropdown" class="popup-panel airport-popup absolute top-full left-0 mt-1 bg-white rounded-xl border border-slate-200 z-50 divide-y divide-slate-100"></div>
+          </div>
+          <!-- CONJOINED DATE PICKER -->
+          <div class="relative z-[90]">
+            <input type="hidden" name="date" id="departDate" value="{{ form.date or '' }}" />
+            <input type="hidden" name="return_date" id="returnDate" value="{{ form.return_date or '' }}" />
+            <button type="button" id="datePickerButton" class="field-shell joined-picker w-full rounded-xl text-left" aria-expanded="false" aria-controls="datePickerPopup">
+              <span class="joined-segment px-3">
+                <span class="field-caption" data-i18n="lblDate">GİDİŞ</span>
+                <span class="flex items-baseline gap-1.5 date-empty"><span id="departDayPreview" class="date-day"></span><span id="departMonthPreview" class="date-month"></span></span>
+              </span>
+              <span class="joined-segment px-3" id="returnPreviewSegment">
+                <span class="field-caption" data-i18n="lblReturnDate">DÖNÜŞ</span>
+                <span class="flex items-baseline gap-1.5 date-empty"><span id="returnDayPreview" class="date-day"></span><span id="returnMonthPreview" class="date-month"></span></span>
+              </span>
+            </button>
+            <div id="datePickerPopup" class="popup-panel absolute top-full left-0 mt-1 w-[min(390px,calc(100vw-48px))] bg-white rounded-xl border border-slate-200 z-[100] p-3">
+              <div class="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 mb-3" role="radiogroup" aria-label="Trip type">
+                <button type="button" class="trip-option rounded-lg px-3 py-1.5 text-xs font-bold" role="radio" data-trip-option="one_way" aria-checked="{{ 'true' if form.trip_type!='round_trip' else 'false' }}" data-i18n="optOW">Tek yön</button>
+                <button type="button" class="trip-option rounded-lg px-3 py-1.5 text-xs font-bold" role="radio" data-trip-option="round_trip" aria-checked="{{ 'true' if form.trip_type=='round_trip' else 'false' }}" data-i18n="optRT">Gidiş-dönüş</button>
+              </div>
+              <div class="flex items-center justify-between mb-2">
+                <button type="button" id="calPrev" class="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">‹</button>
+                <div id="calendarTitle" class="text-sm font-bold text-slate-800"></div>
+                <button type="button" id="calNext" class="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">›</button>
+              </div>
+              <div id="calendarGrid" class="grid grid-cols-7 gap-0.5 text-center text-sm"></div>
+              <div class="mt-2 text-[11px] text-slate-400 font-medium" id="datePickerHint"></div>
+            </div>
+          </div>
+          <!-- PASSENGERS -->
+          <div class="relative">
+            <input type="hidden" name="adults" id="adultsInput" value="{{ form.adults }}" />
+            <input type="hidden" name="children" id="childrenInput" value="{{ form.children }}" />
+            <input type="hidden" name="babies" id="babiesInput" value="{{ form.babies }}" />
+            <button type="button" id="paxButton" class="field-shell w-full rounded-xl text-left" aria-expanded="false" aria-controls="paxPopup">
+              <span class="field-caption" data-i18n="lblPassengers">YOLCULAR</span>
+              <span id="paxButtonText">1 Yolcu</span>
+            </button>
+            <div id="paxPopup" class="popup-panel absolute top-full right-0 mt-1 w-[min(320px,calc(100vw-48px))] bg-white rounded-xl border border-slate-200 z-50 p-4 space-y-3">
+              <div class="flex items-center justify-between gap-3" data-pax-row="adults">
+                <div><div class="text-sm font-bold" data-i18n="lblAdult">YETİŞKİN</div><div class="text-xs text-slate-400">12+</div></div>
+                <div class="flex items-center gap-2">
+                  <button type="button" class="pax-minus w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">−</button>
+                  <span class="w-7 text-center font-bold" id="adultsCount">1</span>
+                  <button type="button" class="pax-plus w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">+</button>
+                </div>
+              </div>
+              <div class="flex items-center justify-between gap-3" data-pax-row="children">
+                <div><div class="text-sm font-bold" data-i18n="lblChild">ÇOCUK</div><div class="text-xs text-slate-400">2-11</div></div>
+                <div class="flex items-center gap-2">
+                  <button type="button" class="pax-minus w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">−</button>
+                  <span class="w-7 text-center font-bold" id="childrenCount">0</span>
+                  <button type="button" class="pax-plus w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">+</button>
+                </div>
+              </div>
+              <div class="flex items-center justify-between gap-3" data-pax-row="babies">
+                <div><div class="text-sm font-bold" data-i18n="lblInfant">BEBEK</div><div class="text-xs text-slate-400">0-2</div></div>
+                <div class="flex items-center gap-2">
+                  <button type="button" class="pax-minus w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">−</button>
+                  <span class="w-7 text-center font-bold" id="babiesCount">0</span>
+                  <button type="button" class="pax-plus w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="btn-primary h-[58px] text-white font-bold px-5 rounded-xl inline-flex items-center justify-center gap-2"><svg class="ic"><use href="#i-search"/></svg> <span data-i18n="searchBtn">Uçuş ara</span></button>
+        </div>
+        {% if results %}
+        <div class="flex items-center justify-end mt-4">
+          <a href="/" class="px-3.5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-600 transition flex items-center justify-center gap-1" title="Aramayı Sıfırla">✕ Sıfırla</a>
+        </div>
+        {% endif %}
+      </form>
+    </div>
+
+    {% if results %}
+      <div class="mt-10 fade-in">
+        {% set dest_img = '/static/case_hero.png' %}
+        {% if results.destination in ['AMS', 'SIN', 'BKK', 'KUL'] %}{% set dest_img = '/static/amsterdam.jpg' %}
+        {% elif results.destination in ['LHR', 'LGW', 'MAN'] %}{% set dest_img = '/static/london.jpg' %}
+        {% elif results.destination in ['CDG', 'FRA', 'MUC', 'BER', 'DUS', 'ZRH', 'VIE', 'MXP', 'FCO', 'MAD', 'BCN'] %}{% set dest_img = '/static/paris.jpg' %}
+        {% elif results.destination in ['JFK', 'ORD', 'LAX', 'MIA', 'SFO', 'BOS', 'YYZ'] %}{% set dest_img = '/static/new_york.jpg' %}
+        {% elif results.destination in ['DXB', 'DOH', 'JED', 'MED', 'RUH', 'CAI', 'CMN'] %}{% set dest_img = '/static/dubai.jpg' %}
+        {% elif results.destination in ['IST', 'SAW', 'ADB', 'ESB', 'AYT', 'TZX'] %}{% set dest_img = '/static/istanbul.jpg' %}
+        {% endif %}
+
+        <!-- Destination Hero Banner for Found Flights -->
+        <div class="relative overflow-hidden rounded-2xl mb-6 shadow-xl border border-slate-200/80 group">
+          <div class="h-40 md:h-48 w-full overflow-hidden relative">
+            <img src="{{ dest_img }}" alt="{{ results.destination }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/>
+            <div class="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/60 to-transparent"></div>
+          </div>
+          <div class="absolute inset-0 p-5 md:p-6 flex flex-col justify-between text-white">
+            <div class="flex items-center justify-between">
+              <span class="bg-rose-600 text-white text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                {{ results.origin }} ➔ {{ results.destination }}
+              </span>
+              <div class="flex items-center gap-2">
+                {% if results.flight_count %}
+                <span class="bg-black/50 backdrop-blur-md text-emerald-400 text-xs font-bold px-3 py-1 rounded-full border border-white/20">
+                  {{ results.flight_count }} uçuş bulundu
+                </span>
+                {% endif %}
+                <a href="/" class="bg-black/50 hover:bg-black/80 backdrop-blur-md text-white text-xs font-bold px-3 py-1 rounded-full border border-white/20 transition flex items-center gap-1" title="Aramayı Temizle">
+                  ✕ Temizle
+                </a>
+              </div>
+            </div>
+            <div>
+              <p class="text-xs font-medium text-rose-200 tracking-wide uppercase">{{ results.date }} · {{ results.passengers.adults }} Yetişkin{% if results.passengers.children %}, {{ results.passengers.children }} Çocuk{% endif %}{% if results.passengers.babies %}, {{ results.passengers.babies }} Bebek{% endif %} · {{ results.seat_passengers }} Koltuk</p>
+              <h3 class="text-xl md:text-2xl font-black tracking-tight mt-0.5 text-white">
+                {{ results.origin }} ➔ {{ results.destination }} Uçuş Seçenekleri
+              </h3>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-end justify-between flex-wrap gap-2 mb-5">
+          <div>
+            <h2 class="text-xl font-black tracking-tight">{{ results.origin }} <span class="acc-text">→</span> {{ results.destination }}</h2>
+            <p class="text-sm text-slate-400 mt-0.5 font-medium">{{ results.date }} · {{ results.passengers.adults }} <span data-i18n="adult">yetişkin</span>{% if results.passengers.children %}, {{ results.passengers.children }} <span data-i18n="child">çocuk</span>{% endif %}{% if results.passengers.babies %}, {{ results.passengers.babies }} <span data-i18n="infant">bebek</span>{% endif %} · <span data-i18n="{{ 'tripRT' if results.trip_type=='round_trip' else 'tripOW' }}">{{ 'gidiş-dönüş' if results.trip_type=='round_trip' else 'tek yön' }}</span> · {{ results.seat_passengers }} <span data-i18n="seatsNeeded">koltuk gerekli</span></p>
+          </div>
+          {% if results.flight_count %}<span class="text-xs font-bold acc-50 acc-text px-3 py-1.5 rounded-full">{{ results.flight_count }} <span data-i18n="flightsFound">uçuş bulundu</span></span>{% endif %}
+        </div>
+
+        {% if results.error %}
+          <div class="bg-amber-50 text-amber-800 ring-1 ring-amber-200 rounded-2xl p-5 text-sm font-medium">{{ results.message }}</div>
+        {% elif results.flight_count == 0 %}
+          <div class="bg-white ring-1 ring-slate-200 rounded-2xl p-8 text-center text-slate-400"><span data-i18n="noFlights1">Bu tarih/rota için satılabilir uçuş bulunamadı.</span><br><span class="text-xs" data-i18n="noFlights2">Filtreleri gevşetmeyi veya başka tarih denemeyi düşünün.</span></div>
+        {% endif %}
+
+        {% if results.flight_count %}
+        <div class="space-y-4">
+          {% for f in results.flights %}
+          {% set card_id = loop.index %}
+          {% set eco = f.fares | dictsort | selectattr('1.cabin', 'equalto', 'economy') | list %}
+          {% set biz = f.fares | dictsort | selectattr('1.cabin', 'equalto', 'business') | list %}
+          {% set cheapest = (f.fares.values() | map(attribute='price_breakdown.grand_total_usd') | min) %}
+          {% set eco_from = (eco | map(attribute='1.price_breakdown.grand_total_usd') | min) if eco else None %}
+          {% set biz_from = (biz | map(attribute='1.price_breakdown.grand_total_usd') | min) if biz else None %}
+          
+          <div class="bg-white border border-slate-200 overflow-hidden">
+            <div class="grid lg:grid-cols-[minmax(380px,1.65fr)_minmax(180px,.62fr)_minmax(180px,.62fr)]">
+              <button type="button" class="flight-panel-btn p-4 lg:p-5" data-panel-btn="flight-{{ card_id }}" onclick="toggleFlightPanel('{{ card_id }}', 'flight', event)" aria-expanded="false">
+                <div class="flex items-center gap-5 md:gap-7">
+                  <div class="text-left min-w-[66px]">
+                    <div class="text-2xl md:text-[28px] font-black text-slate-950 leading-none">{{ f.hour }}</div>
+                    <div class="text-xs font-black text-slate-900 mt-1">{{ f.origin }}</div>
+                    <div class="text-[11px] font-semibold text-slate-500 mt-0.5">{{ f.origin_city }}</div>
+                  </div>
+                  <div class="flex-1 min-w-[120px]">
+                    <div class="text-[11px] font-semibold text-slate-600 text-center mb-1" data-i18n="direct">Direkt</div>
+                    <div class="relative flex items-center">
+                      <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                      <div class="flex-1 h-px bg-slate-400 mx-1 flex items-center justify-center">
+                        <img src="/static/thy-emblem.svg" class="w-5 h-5" alt="THY">
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                    </div>
+                    <div class="text-[11px] font-semibold text-slate-500 text-center mt-2">{{ f.duration_str }}</div>
+                  </div>
+                  <div class="text-left min-w-[66px]">
+                    <div class="text-2xl md:text-[28px] font-black text-slate-950 leading-none">{{ f.arrival_hour }}</div>
+                    <div class="text-xs font-black text-slate-900 mt-1">{{ f.destination }}</div>
+                    <div class="text-[11px] font-semibold text-slate-500 mt-0.5">{{ f.dest_city }}</div>
+                  </div>
+                </div>
+                <div class="mt-3 h-px w-full bg-slate-200"></div>
+                <div class="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-[11px] font-semibold text-slate-600">
+                  <span class="font-mono text-slate-900">{{ f.flight_number }}</span>
+                  <span class="text-slate-300">·</span>
+                  <span>{{ f.plane_model }}</span>
+                  <span class="text-slate-300">·</span>
+                  <span data-i18n="{{ 'badgeRT' if f.fare_type=='round_trip' else 'badgeOW' }}">{{ 'GİDİŞ-DÖNÜŞ' if f.fare_type=='round_trip' else 'TEK YÖN' }}</span>
+                </div>
+              </button>
+
+              <button type="button" class="flight-panel-btn p-4" data-panel-btn="eco-{{ card_id }}" onclick="toggleFlightPanel('{{ card_id }}', 'eco', event)" aria-expanded="false">
+                <div class="text-[11px] font-semibold text-slate-600" data-i18n="economyCabin">Ekonomi</div>
+                <div class="mt-2 text-2xl font-black text-slate-950">{% if eco_from is not none %}${{ eco_from }}{% else %}—{% endif %}</div>
+              </button>
+
+              <button type="button" class="flight-panel-btn p-4" data-panel-btn="biz-{{ card_id }}" onclick="toggleFlightPanel('{{ card_id }}', 'biz', event)" aria-expanded="false" {% if not biz %}disabled{% endif %}>
+                <div class="text-[11px] font-semibold text-slate-600" data-i18n="businessCabin">Business</div>
+                <div class="mt-2 text-2xl font-black text-slate-950">{% if biz_from is not none %}${{ biz_from }}{% else %}—{% endif %}</div>
+              </button>
+            </div>
+
+            <div id="flight-details-{{ card_id }}" class="hidden border-t border-slate-200 bg-white px-5 py-4 text-sm">
+              <div class="grid sm:grid-cols-4 gap-3 text-[12px]">
+                <div>
+                  <div class="font-semibold text-slate-500" data-i18n="flightDetails">Uçuş detayları</div>
+                  <div class="mt-1 font-black text-slate-950">{{ f.flight_number }}</div>
+                </div>
+                <div>
+                  <div class="font-semibold text-slate-500" data-i18n="totalDuration">Toplam seyahat süresi</div>
+                  <div class="mt-1 font-black text-slate-950">{{ f.duration_str }}</div>
+                </div>
+                <div>
+                  <div class="font-semibold text-slate-500" data-i18n="aircraft">Uçak tipi</div>
+                  <div class="mt-1 font-black text-slate-950">{{ f.plane_model }}</div>
+                </div>
+                <div>
+                  <div class="font-semibold text-slate-500" data-i18n="fromPricePP">KİŞİ BAŞI BAŞLANGIÇ</div>
+                  <div class="mt-1 font-black text-slate-950">${{ cheapest }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="eco-details-{{ card_id }}" class="hidden border-t border-slate-200 bg-white">
+              {% if eco %}
+              <div class="fare-matrix-wrap">
+                <table class="fare-compare-table w-full text-[12px] min-w-[980px]">
+                  <thead class="bg-slate-50 text-slate-950">
+                    <tr>
+                      <th class="text-left w-[220px]">
+                        <span class="fare-matrix-title" data-i18n="pkgDetails">Paket detayları</span>
+                      </th>
+                      {% for letter, fare in eco %}
+                      <th class="text-left {{ 'fare-suggested-col' if fare.class == 'FlexFly' }}">
+                        {% if fare.class == 'FlexFly' %}
+                        <span class="fare-suggested-label" data-i18n="recommended">Önerilen</span>
+                        {% endif %}
+                        <span class="fare-class-title">{{ fare.class }}</span>
+                        <span class="fare-price">${{ fare.price_breakdown.grand_total_usd }}</span>
+                        {% if fare.class == 'FlexFly' %}
+                        <span class="fare-suggested-note" data-i18n="balancedPick">Dengeli seçim</span>
+                        {% endif %}
+                      </th>
+                      {% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody class="text-slate-800">
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-bag"/></svg><span data-i18n="cabinBag">Kabin bagajı</span></span></td>{% for letter, fare in eco %}<td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}"><span class="fare-cell-value">1 × {{ fare.cabin_baggage_kg }} kg</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-suitcase"/></svg><span data-i18n="baggageRight">Bagaj hakkı</span></span></td>{% for letter, fare in eco %}<td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}"><span class="fare-cell-value">{% if fare.checked_baggage_kg %}<strong>{{ fare.checked_baggage_kg }} kg</strong>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-seat"/></svg><span data-i18n="seatSelect">Koltuk seçimi</span></span></td>{% for letter, fare in eco %}<td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}"><span class="fare-cell-value">{% if fare.seat_label == 'preferred' %}<span data-i18n="seatPreferred">Ön sıra ve standart</span>{% elif fare.seat_label == 'standard' %}<span data-i18n="seatStandard">Standart koltuk</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-change"/></svg><span data-i18n="freeChange">Ücretsiz değişiklik</span></span></td>{% for letter, fare in eco %}<td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}"><span class="fare-cell-value">{% if fare.free_change %}<span data-i18n="included">Var</span>{% elif fare.changeable %}${{ fare.change_fee_usd }} <span data-i18n="deduction">kesinti</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-refund"/></svg><span data-i18n="refundRight">Kesintisiz iade</span></span></td>{% for letter, fare in eco %}<td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}"><span class="fare-cell-value">{% if fare.free_refund %}<span data-i18n="included">Var</span>{% elif fare.refundable %}${{ fare.refund_fee_usd }} <span data-i18n="deduction">kesinti</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-star"/></svg><span data-i18n="milesRow">Mil</span></span></td>{% for letter, fare in eco %}<td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}"><span class="fare-cell-value"><strong>{{ fare.miles }}</strong> <span data-i18n="milesUnit">Mil</span></span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-fast"/></svg><span data-i18n="fastTrack">Fast track</span></span></td>{% for letter, fare in eco %}<td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}"><span class="fare-cell-value">{% if fare.fast_track %}<span data-i18n="included">Var</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                  </tbody>
+                  <tfoot class="bg-white">
+                    <tr>
+                      <td></td>
+                      {% for letter, fare in eco %}
+                      <td class="{{ 'fare-suggested-col' if fare.class == 'FlexFly' }}">
+                        <button class="buy-btn w-full border border-slate-300 bg-slate-950 hover:bg-slate-800 text-white py-2 px-3 font-black text-[12px]"
+                          data-fid="{{ fare.id }}" data-flight="{{ f.flight_number }}" data-cls="{{ fare.class }}"
+                          data-date="{{ results.date }}" data-route="{{ results.origin }}-{{ results.destination }}"
+                          data-a="{{ results.passengers.adults }}" data-c="{{ results.passengers.children }}" data-b="{{ results.passengers.babies }}">
+                          <span data-i18n="selectFare">Seç</span>
+                        </button>
+                      </td>
+                      {% endfor %}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              {% endif %}
+            </div>
+
+            <div id="biz-details-{{ card_id }}" class="hidden border-t border-slate-200 bg-white">
+              {% if biz %}
+              <div class="fare-matrix-wrap">
+                <table class="fare-compare-table w-full text-[12px] min-w-[880px]">
+                  <thead class="bg-slate-50 text-slate-950">
+                    <tr>
+                      <th class="text-left w-[220px]">
+                        <span class="fare-matrix-title" data-i18n="pkgDetails">Paket detayları</span>
+                      </th>
+                      {% for letter, fare in biz %}
+                      <th class="text-left {{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}">
+                        {% if fare.class == 'BusinessPrime' %}
+                        <span class="fare-suggested-label" data-i18n="recommended">Önerilen</span>
+                        {% endif %}
+                        <span class="fare-class-title">{{ fare.class }}</span>
+                        <span class="fare-price">${{ fare.price_breakdown.grand_total_usd }}</span>
+                        {% if fare.class == 'BusinessPrime' %}
+                        <span class="fare-suggested-note" data-i18n="balancedPick">Dengeli seçim</span>
+                        {% endif %}
+                      </th>
+                      {% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody class="text-slate-800">
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-bag"/></svg><span data-i18n="cabinBag">Kabin bagajı</span></span></td>{% for letter, fare in biz %}<td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}"><span class="fare-cell-value">1 × {{ fare.cabin_baggage_kg }} kg</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-suitcase"/></svg><span data-i18n="baggageRight">Bagaj hakkı</span></span></td>{% for letter, fare in biz %}<td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}"><span class="fare-cell-value">{% if fare.checked_baggage_kg %}<strong>{{ fare.checked_baggage_kg }} kg</strong>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-seat"/></svg><span data-i18n="seatSelect">Koltuk seçimi</span></span></td>{% for letter, fare in biz %}<td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}"><span class="fare-cell-value">{% if fare.seat_label == 'preferred' %}<span data-i18n="seatPreferred">Ön sıra ve standart</span>{% elif fare.seat_label == 'standard' %}<span data-i18n="seatStandard">Standart koltuk</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-change"/></svg><span data-i18n="freeChange">Ücretsiz değişiklik</span></span></td>{% for letter, fare in biz %}<td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}"><span class="fare-cell-value">{% if fare.free_change %}<span data-i18n="included">Var</span>{% elif fare.changeable %}${{ fare.change_fee_usd }} <span data-i18n="deduction">kesinti</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-refund"/></svg><span data-i18n="refundRight">Kesintisiz iade</span></span></td>{% for letter, fare in biz %}<td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}"><span class="fare-cell-value">{% if fare.free_refund %}<span data-i18n="included">Var</span>{% elif fare.refundable %}${{ fare.refund_fee_usd }} <span data-i18n="deduction">kesinti</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-star"/></svg><span data-i18n="milesRow">Mil</span></span></td>{% for letter, fare in biz %}<td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}"><span class="fare-cell-value"><strong>{{ fare.miles }}</strong> <span data-i18n="milesUnit">Mil</span></span></td>{% endfor %}</tr>
+                    <tr><td><span class="fare-row-label"><svg class="ic fare-row-icon"><use href="#i-fast"/></svg><span data-i18n="fastTrack">Fast track</span></span></td>{% for letter, fare in biz %}<td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}"><span class="fare-cell-value">{% if fare.fast_track %}<span data-i18n="included">Var</span>{% else %}<span data-i18n="unavailable">Yok</span>{% endif %}</span></td>{% endfor %}</tr>
+                  </tbody>
+                  <tfoot class="bg-white">
+                    <tr>
+                      <td></td>
+                      {% for letter, fare in biz %}
+                      <td class="{{ 'fare-suggested-col' if fare.class == 'BusinessPrime' }}">
+                        <button class="buy-btn w-full border border-slate-300 bg-slate-950 hover:bg-slate-800 text-white py-2 px-3 font-black text-[12px]"
+                          data-fid="{{ fare.id }}" data-flight="{{ f.flight_number }}" data-cls="{{ fare.class }}"
+                          data-date="{{ results.date }}" data-route="{{ results.origin }}-{{ results.destination }}"
+                          data-a="{{ results.passengers.adults }}" data-c="{{ results.passengers.children }}" data-b="{{ results.passengers.babies }}">
+                          <span data-i18n="selectFare">Seç</span>
+                        </button>
+                      </td>
+                      {% endfor %}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      </div>
+    {% endif %}
+
+    <!-- FEATURED FARES / POPULAR ROUTES THIS WEEK (Matching user screenshot) -->
+    <div class="mt-8 mb-10 bg-white rounded-2xl p-6 md:p-8 shadow-sm ring-1 ring-slate-200/80">
+      <div class="flex items-start justify-between flex-wrap gap-4 mb-6 border-b border-slate-100 pb-4">
+        <div>
+          <span class="text-[11px] font-extrabold text-rose-600 tracking-wider uppercase block mb-1">FEATURED FARES</span>
+          <h2 class="text-xl md:text-2xl font-black tracking-tight text-slate-900">Popular routes this week</h2>
+          <p class="text-xs md:text-sm text-slate-500 mt-1 font-medium">Direct AeroVista & Turkish Airlines fares with seasonal availability.</p>
+        </div>
+        <button type="button" onclick="quickSearch('IST', 'LHR', '2026-08-06')" class="inline-flex items-center gap-2 border border-slate-900 hover:bg-slate-900 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition text-slate-900">
+          <span>View all routes</span>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </button>
+      </div>
+
+      <!-- 4 Cards Grid (matching screenshot design) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1: Istanbul to London -->
+        <div onclick="quickSearch('IST', 'LHR', '2026-08-06')" class="group relative rounded-xl overflow-hidden border border-slate-200 shadow-md cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+          <div class="h-44 w-full overflow-hidden relative">
+            <img src="/static/london.jpg" alt="London" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
+            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent"></div>
+          </div>
+          <div class="absolute top-3 left-3 flex items-center justify-between w-[calc(100%-24px)]">
+            <span class="bg-black/65 backdrop-blur-md text-white text-xs font-black px-2.5 py-1 rounded border border-white/20 tracking-wider">IST - LHR</span>
+            <span class="text-white text-xs font-bold bg-black/50 backdrop-blur-md px-2.5 py-1 rounded">From $158</span>
+          </div>
+          <div class="absolute bottom-3 left-3 right-3 text-white">
+            <p class="text-[11px] font-medium text-slate-300">Travel from Aug 6</p>
+            <h3 class="text-base font-extrabold tracking-tight mt-0.5 group-hover:text-rose-400 transition-colors">Istanbul to London</h3>
+          </div>
+        </div>
+
+        <!-- Card 2: Amsterdam to Istanbul -->
+        <div onclick="quickSearch('AMS', 'IST', '2026-08-09')" class="group relative rounded-xl overflow-hidden border border-slate-200 shadow-md cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+          <div class="h-44 w-full overflow-hidden relative">
+            <img src="/static/amsterdam.jpg" alt="Amsterdam" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
+            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent"></div>
+          </div>
+          <div class="absolute top-3 left-3 flex items-center justify-between w-[calc(100%-24px)]">
+            <span class="bg-black/65 backdrop-blur-md text-white text-xs font-black px-2.5 py-1 rounded border border-white/20 tracking-wider">AMS - IST</span>
+            <span class="text-white text-xs font-bold bg-black/50 backdrop-blur-md px-2.5 py-1 rounded">From $132</span>
+          </div>
+          <div class="absolute bottom-3 left-3 right-3 text-white">
+            <p class="text-[11px] font-medium text-slate-300">Travel from Aug 9</p>
+            <h3 class="text-base font-extrabold tracking-tight mt-0.5 group-hover:text-rose-400 transition-colors">Amsterdam to Istanbul</h3>
+          </div>
+        </div>
+
+        <!-- Card 3: Istanbul to Paris -->
+        <div onclick="quickSearch('IST', 'CDG', '2026-08-12')" class="group relative rounded-xl overflow-hidden border border-slate-200 shadow-md cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+          <div class="h-44 w-full overflow-hidden relative">
+            <img src="/static/paris.jpg" alt="Paris" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
+            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent"></div>
+          </div>
+          <div class="absolute top-3 left-3 flex items-center justify-between w-[calc(100%-24px)]">
+            <span class="bg-black/65 backdrop-blur-md text-white text-xs font-black px-2.5 py-1 rounded border border-white/20 tracking-wider">IST - CDG</span>
+            <span class="text-white text-xs font-bold bg-black/50 backdrop-blur-md px-2.5 py-1 rounded">From $145</span>
+          </div>
+          <div class="absolute bottom-3 left-3 right-3 text-white">
+            <p class="text-[11px] font-medium text-slate-300">Travel from Aug 12</p>
+            <h3 class="text-base font-extrabold tracking-tight mt-0.5 group-hover:text-rose-400 transition-colors">Istanbul to Paris</h3>
+          </div>
+        </div>
+
+        <!-- Card 4: Istanbul to New York -->
+        <div onclick="quickSearch('IST', 'JFK', '2026-08-18')" class="group relative rounded-xl overflow-hidden border border-slate-200 shadow-md cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+          <div class="h-44 w-full overflow-hidden relative">
+            <img src="/static/new_york.jpg" alt="New York" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
+            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent"></div>
+          </div>
+          <div class="absolute top-3 left-3 flex items-center justify-between w-[calc(100%-24px)]">
+            <span class="bg-black/65 backdrop-blur-md text-white text-xs font-black px-2.5 py-1 rounded border border-white/20 tracking-wider">IST - JFK</span>
+            <span class="text-white text-xs font-bold bg-black/50 backdrop-blur-md px-2.5 py-1 rounded">From $520</span>
+          </div>
+          <div class="absolute bottom-3 left-3 right-3 text-white">
+            <p class="text-[11px] font-medium text-slate-300">Travel from Aug 18</p>
+            <h3 class="text-base font-extrabold tracking-tight mt-0.5 group-hover:text-rose-400 transition-colors">Istanbul to New York</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if not results %}
+      <!-- Popular routes, priced from the live inventory -->
+      <div class="mt-12 fade-in">
+        <div class="flex items-end justify-between mb-5">
+          <div>
+            <div class="text-[11px] font-black tracking-[.18em] acc-text mb-1" data-i18n="prFeatured">ÖNE ÇIKAN ÜCRETLER</div>
+            <h2 class="text-xl font-black tracking-tight" data-i18n="prTitle">Bu haftanın popüler rotaları</h2>
+            <p class="text-[13px] text-slate-400 font-medium mt-0.5" data-i18n="prSub">Canlı envanterden en uygun başlangıç fiyatları.</p>
+          </div>
+        </div>
+        <div id="popularRoutes" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+      </div>
+
+      <div class="mt-12 grid md:grid-cols-4 gap-5 fade-in">
+        <div class="feat-card">
+          <div class="w-11 h-11 rounded-xl acc-50 acc-text flex items-center justify-center mb-4"><svg class="ic" style="width:1.35em;height:1.35em"><use href="#i-trend-down"/></svg></div>
+          <div class="font-bold text-[15px] mb-1.5" data-i18n="feat1t">Dinamik fiyatlandırma</div>
+          <p class="text-[13px] text-slate-400 leading-relaxed font-medium" data-i18n="feat1d">Kalkışa 2 gün kala ×1.45, 7 gün kala ×1.25 çarpan. Erken alan kazanır.</p>
+        </div>
+        <div class="feat-card">
+          <div class="w-11 h-11 rounded-xl acc-50 acc-text flex items-center justify-center mb-4"><svg class="ic" style="width:1.35em;height:1.35em"><use href="#i-refresh"/></svg></div>
+          <div class="font-bold text-[15px] mb-1.5" data-i18n="feat2t">Gidiş-dönüş avantajı</div>
+          <p class="text-[13px] text-slate-400 leading-relaxed font-medium" data-i18n="feat2d">Round-trip bilet, tek yönün %88'i. İki ayrı bilet neredeyse hiç mantıklı değil.</p>
+        </div>
+        <div class="feat-card">
+          <div class="w-11 h-11 rounded-xl acc-50 acc-text flex items-center justify-center mb-4"><svg class="ic" style="width:1.35em;height:1.35em"><use href="#i-layers"/></svg></div>
+          <div class="font-bold text-[15px] mb-1.5" data-i18n="featBundleT">AI Destekli Paketleme</div>
+          <p class="text-[13px] text-slate-400 leading-relaxed font-medium" data-i18n="featBundleD">Seyahat ihtiyacınızı doğal dilde anlatın, AI size en uygun kişiselleştirilmiş paketleri (Ekonomik, Önerilen, Konfor) oluştursun.</p>
+        </div>
+        <div class="feat-card">
+          <div class="w-11 h-11 rounded-xl bg-white ring-1 ring-slate-200 flex items-center justify-center mb-4 overflow-hidden"><img src="/static/wingo-face.png" class="w-full h-full" style="object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg width="32" height="32" viewBox="0 0 64 64" style="display:none"><use href="#wingo"/></svg></div>
+          <div class="font-bold text-[15px] mb-1.5" data-i18n="feat3t">Seyahat Danışmanı</div>
+          <p class="text-[13px] text-slate-400 leading-relaxed font-medium" data-i18n="feat3d">Seyahat ihtiyacınızı anlatın, size en uygun seçenekleri sunalım.</p>
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- ============ CASE STUDY ANALIZ PANELI ============ -->
+    <div class="theme-case-only mt-12">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="h-px flex-1 bg-slate-200"></div>
+        <span class="text-[11px] font-black tracking-[.2em] text-slate-400" data-i18n="cpTitle">VAKA ÇALIŞMASI ANALİZ PANELİ</span>
+        <div class="h-px flex-1 bg-slate-200"></div>
+      </div>
+
+      <!-- 1) Senaryo + Mimari -->
+      <div class="grid lg:grid-cols-3 gap-5">
+        <!-- Yilmaz ailesi senaryosu -->
+        <div class="lg:col-span-1 bg-white rounded-2xl ring-1 ring-slate-200/80 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <div class="font-black text-[15px]" data-i18n="cpScenario">Yılmaz Ailesi Senaryosu</div>
+            <span class="text-[10px] font-bold acc-50 acc-text px-2 py-1 rounded-full">CASE</span>
+          </div>
+          <div class="space-y-2 text-[12px]">
+            <div class="flex justify-between py-1.5 border-b border-slate-100"><span class="text-slate-400 font-medium" data-i18n="cpRoute">Rota</span><span class="font-bold">IST ⇄ Tokyo · <span data-i18n="cpNights">7 gece</span></span></div>
+            <div class="flex justify-between py-1.5 border-b border-slate-100"><span class="text-slate-400 font-medium" data-i18n="cpPax">Yolcular</span><span class="font-bold" data-i18n="cpPaxVal">2 Yetişkin + 1 Çocuk + 1 Bebek</span></div>
+            <div class="flex justify-between py-1.5 border-b border-slate-100"><span class="text-slate-400 font-medium" data-i18n="cpSeats">Koltuk ihtiyacı</span><span class="font-bold">3 <span class="text-slate-400 font-medium" data-i18n="cpNoSeat">(bebek koltuksuz)</span></span></div>
+            <div class="flex justify-between py-1.5 border-b border-slate-100"><span class="text-slate-400 font-medium" data-i18n="cpConstraint">Kısıt</span><span class="font-bold" data-i18n="cpChangeable">Değiştirilebilir bilet</span></div>
+            <div class="flex justify-between py-1.5"><span class="text-slate-400 font-medium" data-i18n="cpRisk">Kritik risk</span><span class="font-bold text-amber-600" data-i18n="cpRiskVal">Dönüşte Q sınıfı = 3 koltuk</span></div>
+          </div>
+          <button id="runScenario" class="mt-4 w-full acc-bg acc-bg-hover text-white text-[13px] font-bold py-2.5 rounded-xl transition inline-flex items-center justify-center gap-2">
+            <svg class="ic"><use href="#i-cpu"/></svg> <span data-i18n="cpRunBtn">Senaryoyu Wingo ile çalıştır</span>
+          </button>
+          <p class="text-[11px] text-slate-400 mt-2 leading-relaxed"><span data-i18n="cpRunNote">Agent aramayı yapar, değiştirilebilir fareleri filtreler, aile toplamını vergilerle hesaplar.</span></p>
+        </div>
+
+        <!-- Mimari akis -->
+        <div class="lg:col-span-2 bg-white rounded-2xl ring-1 ring-slate-200/80 p-5 shadow-sm">
+          <div class="font-black text-[15px] mb-4" data-i18n="cpArch">AI Agent Orkestrasyon Mimarisi</div>
+          <div class="space-y-2.5">
+            <div class="flex items-center gap-3">
+              <div class="w-24 shrink-0 text-[10px] font-black text-slate-400 tracking-wider" data-i18n="cpLayerCh">KANAL</div>
+              <div class="flex-1 rounded-xl bg-slate-50 ring-1 ring-slate-200 px-4 py-2.5 text-[12px] font-bold"><span data-i18n="cpL1">Web sitesi · Wingo yan paneli</span> <span class="text-slate-400 font-medium" data-i18n="cpL1n">(doğal dil)</span></div>
+            </div>
+            <div class="text-center text-slate-300 text-[11px] leading-none">▼</div>
+            <div class="flex items-center gap-3">
+              <div class="w-24 shrink-0 text-[10px] font-black text-slate-400 tracking-wider" data-i18n="cpLayerAg">AGENT</div>
+              <div class="flex-1 rounded-xl px-4 py-2.5 text-[12px] font-bold text-white" style="background:linear-gradient(100deg,var(--accent-darker),var(--accent-dark))">Intent → Planlama → Tool-calling <span class="opacity-70 font-medium">· Azure OpenAI</span></div>
+            </div>
+            <div class="text-center text-slate-300 text-[11px] leading-none">▼</div>
+            <div class="flex items-center gap-3">
+              <div class="w-24 shrink-0 text-[10px] font-black text-slate-400 tracking-wider" data-i18n="cpLayerGr">GUARDRAIL</div>
+              <div class="flex-1 rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-2.5 text-[12px] font-bold text-amber-800"><span data-i18n="cpL3">Grounding · quote→onay→commit · read/write ayrımı</span></div>
+            </div>
+            <div class="text-center text-slate-300 text-[11px] leading-none">▼</div>
+            <div class="flex items-center gap-3">
+              <div class="w-24 shrink-0 text-[10px] font-black text-slate-400 tracking-wider" data-i18n="cpLayerSys">SİSTEMLER</div>
+              <div class="flex-1 grid grid-cols-2 gap-2.5">
+                <div class="rounded-xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2.5">
+                  <div class="text-[12px] font-bold inline-flex items-center gap-1.5"><svg class="ic"><use href="#i-db"/></svg> <span data-i18n="cpOurPricer">Bizim Pricer</span></div>
+                  <div class="text-[10px] text-slate-400 font-medium mt-0.5" data-i18n="cpOurPricerSub">arama · fiyat · SATIN ALMA</div>
+                </div>
+                <div class="rounded-xl acc-50 ring-1 ring-slate-200 px-3 py-2.5">
+                  <div class="text-[12px] font-bold acc-text inline-flex items-center gap-1.5"><svg class="ic"><use href="#i-globe"/></svg> <span data-i18n="cpThyLive">THY Canlı MCP</span></div>
+                  <div class="text-[10px] text-slate-400 font-medium mt-0.5">OAuth 2.0 · read-only</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2) Canli durum + kurallar + log -->
+      <div class="grid lg:grid-cols-3 gap-5 mt-5">
+        <!-- Sistem durumu -->
+        <div class="bg-white rounded-2xl ring-1 ring-slate-200/80 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <div class="font-black text-[15px]" data-i18n="cpSysStatus">Canlı Sistem Durumu</div>
+            <button id="refreshStats" class="text-[10px] font-bold text-slate-400 hover:text-slate-700 transition"><span data-i18n="cpRefresh">↻ yenile</span></button>
+          </div>
+          <div class="space-y-2 text-[12px]" id="sysStatus">
+            <div class="text-slate-400" data-i18n="cpLoading">yükleniyor…</div>
+          </div>
+        </div>
+
+        <!-- Fiyatlandirma kurallari -->
+        <div class="bg-white rounded-2xl ring-1 ring-slate-200/80 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3"><div class="font-black text-[15px]" data-i18n="cpRules">Fiyatlandırma Kuralları</div><span id="ragBadge" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">RAG</span></div>
+          <div class="space-y-2 text-[12px]" id="priceRules">
+            <div class="text-slate-400" data-i18n="cpLoading">yükleniyor…</div>
+          </div>
+        </div>
+
+        <!-- Karar noktalari -->
+        <div class="bg-white rounded-2xl ring-1 ring-slate-200/80 p-5 shadow-sm">
+          <div class="font-black text-[15px] mb-3" data-i18n="cpDecisions">Karar Noktaları</div>
+          <div class="space-y-2 text-[12px]">
+            <div class="flex items-start gap-2.5 py-1.5 border-b border-slate-100">
+              <span class="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full shrink-0 mt-0.5">OTO</span>
+              <span class="font-medium" data-i18n="cpD1">Niyet analizi, tool seçimi, sıralama</span>
+            </div>
+            <div class="flex items-start gap-2.5 py-1.5 border-b border-slate-100">
+              <span class="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full shrink-0 mt-0.5">OTO</span>
+              <span class="font-medium" data-i18n="cpD2">Arama, fiyat kırılımı, teklif hazırlama</span>
+            </div>
+            <div class="flex items-start gap-2.5 py-1.5 border-b border-slate-100">
+              <span class="text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full shrink-0 mt-0.5">SİS</span>
+              <span class="font-medium"><span data-i18n="cpD3">Fiyat/müsaitlik</span> <span class="text-slate-400" data-i18n="cpD3n">— LLM asla üretmez</span></span>
+            </div>
+            <div class="flex items-start gap-2.5 py-1.5">
+              <span class="text-[10px] font-black bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full shrink-0 mt-0.5">İNSAN</span>
+              <span class="font-medium"><span data-i18n="cpD4">Satın alma onayı</span> <span class="text-slate-400" data-i18n="cpD4n">— zorunlu</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2.5) TAKIM 4 VAKA COZUMU -->
+      <div class="bg-white rounded-2xl ring-1 ring-slate-200/80 p-5 shadow-sm mt-5">
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-1">
+          <div>
+            <div class="font-black text-[15px]" data-i18n="cpSolution">Takım 4 · Vaka Çözümü</div>
+            <p class="text-[12px] text-slate-400 font-medium mt-0.5"><span data-i18n="cpSolutionSub">8 sorunun cevabı — kilit hesaplar canlı fiyat motoruyla doğrulanır</span></p>
+          </div>
+          <a href="/static/case-solution.pdf" target="_blank" class="text-[12px] font-bold acc-text hover:underline inline-flex items-center gap-1.5">
+            <svg class="ic"><use href="#i-receipt"/></svg> <span data-i18n="cpPdf">Çözüm PDF'i</span>
+          </a>
+        </div>
+
+        <!-- Canli dogrulama seridi -->
+        <div id="caseVerify" class="grid sm:grid-cols-3 gap-3 my-4"></div>
+
+        <!-- Soru kartlari -->
+        <div id="caseAnswers" class="space-y-2">
+          <div class="text-slate-400 text-[12px] py-2" data-i18n="cpLoading">yükleniyor…</div>
+        </div>
+      </div>
+
+      <!-- 3) Tool cagri logu -->
+      <div class="bg-white rounded-2xl ring-1 ring-slate-200/80 p-5 shadow-sm mt-5">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-black text-[15px]"><span data-i18n="cpLog">Tool Çağrı Logu</span> <span class="text-slate-400 font-medium text-[12px]">· Explainable AI</span></div>
+          <div class="text-[11px] font-bold text-slate-400" id="logSummary">—</div>
+        </div>
+        <div id="toolLog" class="text-[12px]">
+          <div class="text-slate-400 py-3 text-center" data-i18n="cpNoLog">Henüz tool çağrısı yok. Wingo'ya bir soru sorun.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-[#1B1E24] text-white/60 text-[11px] font-medium">
+    <div class="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between flex-wrap gap-2">
+      <span class="theme-thy-only" data-i18n="footLThy">© 2024 Turkish Airlines. Tüm hakları saklıdır.</span>
+      <span class="theme-thy-only" data-i18n="footRThy">Gizlilik Politikası · Kullanım Koşulları · İletişim</span>
+      <span class="theme-case-only" data-i18n="footL">© Dynamic Pricer — Yaz Staj Programı vaka çalışması demosu. Resmî Turkish Airlines ürünü değildir.</span>
+      <span class="theme-case-only" data-i18n="footR">Pricing Systems · Grup 4 · AI Agent Architecture</span>
+    </div>
+  </footer>
+
+  <!-- THY SERVIS MODAL -->
+  <div id="thyModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-black/40 p-4">
+    <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden fade-in">
+      <div class="acc-bg text-white px-5 py-3.5 flex items-center justify-between">
+        <div id="thyModalTitle" class="font-bold inline-flex items-center gap-2"></div>
+        <button id="thyModalClose" class="text-white/80 hover:text-white text-lg w-8 h-8 rounded-lg hover:bg-white/10 transition">✕</button>
+      </div>
+      <div class="p-5">
+        <div class="text-[11px] font-bold text-slate-400 mb-3 inline-flex items-center gap-1.5"><svg class="ic"><use href="#i-globe"/></svg> <span data-i18n="mThyNote">Gerçek THY Canlı MCP'den sorgulanır</span></div>
+        <div id="thyModalForm"></div>
+        <div id="thyModalResult" class="mt-4"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JOIN MODAL -->
+  <div id="joinModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-black/40 p-4" onclick="if(event.target===this)this.style.display='none'">
+    <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden fade-in">
+      <div class="acc-bg text-white px-5 py-4 flex items-center justify-between">
+        <div class="font-bold text-lg inline-flex items-center gap-2"><svg class="ic" style="width:1.2em;height:1.2em"><use href="#i-user"/></svg> <span data-i18n="joinTitle">Üye Ol</span></div>
+        <button onclick="this.closest('#joinModal').style.display='none'" class="text-white/80 hover:text-white text-lg w-8 h-8 rounded-lg hover:bg-white/10 transition">✕</button>
+      </div>
+      <div class="p-5 space-y-3">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 tracking-wider mb-1" data-i18n="joinName">AD SOYAD</label>
+          <input type="text" placeholder="" class="w-full rounded-xl premium-input px-3 py-2.5 text-sm font-semibold outline-none" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 tracking-wider mb-1" data-i18n="joinEmail">E-POSTA</label>
+          <input type="email" placeholder="ornek@email.com" class="w-full rounded-xl premium-input px-3 py-2.5 text-sm font-semibold outline-none" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 tracking-wider mb-1" data-i18n="joinPass">ŞFRE</label>
+          <input type="password" placeholder="••••••••" class="w-full rounded-xl premium-input px-3 py-2.5 text-sm font-semibold outline-none" />
+        </div>
+        <button onclick="alert(lang==='en'?'Registration is not available in the demo.':'Kayıt demo modunda kullanılamıyor.');this.closest('#joinModal').style.display='none'" class="w-full btn-primary text-white font-bold py-2.5 rounded-xl text-sm mt-1" data-i18n="joinBtn">Üye Ol</button>
+        <p class="text-center text-[11px] text-slate-400"><span data-i18n="joinHave">Zaten üye misiniz?</span> <button onclick="this.closest('#joinModal').style.display='none';document.getElementById('loginModal').style.display='flex'" class="font-bold acc-text hover:underline" data-i18n="joinGoLogin">Giriş yapın</button></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGIN MODAL -->
+  <div id="loginModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-black/40 p-4" onclick="if(event.target===this)this.style.display='none'">
+    <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden fade-in">
+      <div class="acc-bg text-white px-5 py-4 flex items-center justify-between">
+        <div class="font-bold text-lg inline-flex items-center gap-2"><svg class="ic" style="width:1.2em;height:1.2em"><use href="#i-user"/></svg> <span data-i18n="loginTitle">Giriş Yap</span></div>
+        <button onclick="this.closest('#loginModal').style.display='none'" class="text-white/80 hover:text-white text-lg w-8 h-8 rounded-lg hover:bg-white/10 transition">✕</button>
+      </div>
+      <div class="p-5 space-y-3">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 tracking-wider mb-1" data-i18n="loginEmail">E-POSTA VEYA MILES&SMILES NO</label>
+          <input type="text" placeholder="" class="w-full rounded-xl premium-input px-3 py-2.5 text-sm font-semibold outline-none" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 tracking-wider mb-1" data-i18n="loginPass">ŞFRE</label>
+          <input type="password" placeholder="••••••••" class="w-full rounded-xl premium-input px-3 py-2.5 text-sm font-semibold outline-none" />
+        </div>
+        <div class="flex items-center justify-between">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" class="rounded border-slate-300" style="accent-color: var(--accent-dark);" />
+            <span class="text-[12px] text-slate-500 font-medium" data-i18n="loginRemember">Beni hatırla</span>
+          </label>
+          <button class="text-[12px] font-bold acc-text hover:underline" data-i18n="loginForgot">Şifremi unuttum</button>
+        </div>
+        <button onclick="alert(lang==='en'?'Login is not available in the demo.':'Giriş demo modunda kullanılamıyor.');this.closest('#loginModal').style.display='none'" class="w-full btn-primary text-white font-bold py-2.5 rounded-xl text-sm mt-1" data-i18n="loginBtn">Giriş Yap</button>
+        <p class="text-center text-[11px] text-slate-400"><span data-i18n="loginNoAccount">Üye değil misiniz?</span> <button onclick="this.closest('#loginModal').style.display='none';document.getElementById('joinModal').style.display='flex'" class="font-bold acc-text hover:underline" data-i18n="loginGoJoin">Üye olun</button></p>
+      </div>
+    </div>
+  </div>
+
+  <button id="chatBtn" class="fixed bottom-6 right-6 bg-white rounded-full w-16 h-16 flex items-center justify-center z-40 transition-all duration-300 hover:scale-110 active:scale-95 shadow-lg ring-2 overflow-hidden" style="--tw-ring-color:var(--accent)"><img src="/static/wingo-face.png" class="w-full h-full" style="object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg width="46" height="46" viewBox="0 0 64 64" style="display:none"><use href="#wingo"/></svg></button>
+
+  <aside id="chatPanel" class="fixed top-0 right-0 h-full w-full sm:w-[600px] bg-white shadow-2xl translate-x-full transition-transform duration-300 z-50 flex flex-col">
+    <div class="text-white px-5 py-5" style="background: linear-gradient(135deg, var(--accent-darker) 0%, var(--accent-dark) 60%, var(--accent) 100%);">
+      <div class="flex items-start gap-4">
+        <button id="chatClose" class="text-white/70 hover:text-white text-xl w-9 h-9 rounded-lg hover:bg-white/10 transition mt-1">✕</button>
+        <div class="flex-1">
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-full bg-white flex items-center justify-center shadow-sm overflow-hidden"><img src="/static/wingo-face.png" class="w-full h-full" style="object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><svg width="36" height="36" viewBox="0 0 64 64" style="display:none"><use href="#wingo"/></svg></div>
+            <div>
+              <div class="font-bold text-lg leading-none" data-i18n="chatTitle">Fiyat Asistanı</div>
+              <div class="text-[11px] text-white/80 mt-1.5" data-i18n="chatSub">Yapay zekâ destekli seyahat danışmanı</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="chat-header-inner mt-3.5">
+        <div class="text-[10px] font-bold text-white/60 tracking-wider mb-1.5" data-i18n="dataSource">VERİ KAYNAĞI</div>
+        <div id="sourcePicker" class="grid grid-cols-3 gap-1 bg-white/10 rounded-xl p-1">
+          <button data-source="ours" class="src-btn text-[11px] font-bold py-1.5 rounded-lg transition text-white/70 hover:text-white inline-flex items-center justify-center gap-1.5"><svg class="ic"><use href="#i-db"/></svg> <span data-i18n="srcOurs">Bizim</span></button>
+          <button data-source="thy" class="src-btn text-[11px] font-bold py-1.5 rounded-lg transition text-white/70 hover:text-white inline-flex items-center justify-center gap-1.5"><svg class="ic"><use href="#i-globe"/></svg> <span data-i18n="srcThy">THY Canlı</span></button>
+          <button data-source="both" class="src-btn text-[11px] font-bold py-1.5 rounded-lg transition bg-white shadow-sm inline-flex items-center justify-center gap-1.5" style="color: var(--accent-dark);"><svg class="ic"><use href="#i-layers"/></svg> <span data-i18n="srcBoth">İkisi</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="messages" class="flex-1 overflow-y-auto p-5 space-y-4 text-sm" style="background: var(--surface);">
+      <div class="flex flex-col items-center pt-1 pb-1">
+        <img src="/static/wingo-full.png" class="w-40 h-40 drop-shadow-md" style="object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+        <svg width="124" height="124" viewBox="0 0 64 64" class="drop-shadow-md" style="display:none"><use href="#wingo"/></svg>
+        <div class="text-lg font-black acc-text mt-1">Wingo</div>
+      </div>
+      <div class="chat-bubble-bot rounded-2xl rounded-tl-md p-4 mr-6 shadow-sm">
+        <div class="font-bold acc-text mb-1" data-i18n="greetTitle">Merhaba</div>
+        <span data-i18n="greetBody">Doğal dilde uçuş arayabilir, gerçek THY fiyatlarıyla karşılaştırabilir, onayınla bilet alabilirim. Yukarıdan veri kaynağını seçebilirsin.</span>
+        <div class="mt-2.5 flex flex-wrap gap-1.5" id="suggestions">
+          <button class="sug text-[11px] acc-50 acc-text font-bold px-2.5 py-1 rounded-full transition hover:opacity-80" data-i18n="sugBundle1">Hafta sonu eşimle Londra'ya gitmek istiyorum. Lüks ve rahat bir yolculuk arıyorum.</button>
+          <button class="sug text-[11px] acc-50 acc-text font-bold px-2.5 py-1 rounded-full transition hover:opacity-80" data-i18n="sugBundle2">İş toplantısı için Amsterdam'a uçacağım. Bagajım yok, sadece ucuz olsun.</button>
+          <button class="sug text-[11px] acc-50 acc-text font-bold px-2.5 py-1 rounded-full transition hover:opacity-80" data-i18n="sug2">Bizim fiyatla THY canlıyı karşılaştır</button>
+          <button class="sug text-[11px] acc-50 acc-text font-bold px-2.5 py-1 rounded-full transition hover:opacity-80" data-i18n="sug3">Hangi havalimanları var?</button>
+          <button class="sug text-[11px] acc-50 acc-text font-bold px-2.5 py-1 rounded-full transition hover:opacity-80" data-i18n="sugRag">Uçuşum iptal edilirse haklarım neler?</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t border-slate-200 p-4 bg-white">
+      <div class="chat-input-wrap">
+        <form id="chatForm" class="flex gap-2.5">
+          <input id="chatInput" autocomplete="off" data-i18n-ph="chatPh" placeholder="Mesaj yazın…" class="flex-1 rounded-xl premium-input px-4 py-3 text-sm outline-none" />
+          <button type="button" id="micBtn" title="Sesli mesaj" class="hidden w-12 rounded-xl ring-1 ring-slate-200 bg-white text-slate-500 hover:text-[var(--accent-dark)] hover:ring-[var(--accent)] transition items-center justify-center shrink-0"><svg class="ic" style="width:1.2em;height:1.2em"><use href="#i-mic"/></svg></button>
+          <button class="btn-primary text-white px-5 rounded-xl font-bold text-sm inline-flex items-center justify-center"><svg class="ic" style="width:1.2em;height:1.2em"><use href="#i-send"/></svg></button>
+        </form>
+        <div id="micStatus" class="items-center gap-2 mt-2 px-1">
+          <span class="relative flex h-2 w-2 shrink-0">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background:var(--accent)"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2" style="background:var(--accent-dark)"></span>
+          </span>
+          <span class="text-[11px] font-bold acc-text" id="micStatusText">Dinliyorum…</span>
+          <span class="text-[11px] text-slate-400 font-medium truncate" id="micPreview"></span>
+        </div>
+        <div class="text-[10px] text-slate-400 mt-2 px-1 font-medium" data-i18n="chatNote">Satın alma yalnızca senin açık onayınla · fiyatlar sistemden gelir · THY canlı read-only</div>
+      </div>
+    </div>
+  </aside>
+
+  <script>
+    // ================= i18n =================
+    const I18N = {
+      tr: {
+        topStrip:'Türkiye · Türkçe · TRY', help:'Yardım', deals:'Kampanyalar',
+        navPlan:'Uçuş Planlama', navManage:'Check-in ve Yönet', navChat:'Wingo',
+        heroSubThy:"300'den fazla noktaya uçuş · net fiyatlar · kolay rezervasyon",
+        thyLogoSub:'WIDEN YOUR WORLD',
+        caseSub:'PRICING SYSTEMS · AI AGENT MVP · GRUP 4', badgeOurs:'Bizim sistem', badgeThy:'THY Canlı MCP', badgeAgent:'Asistan',
+        navJoin:'Üye Ol', navLogin:'Giriş Yap',
+        joinTitle:'Üye Ol', joinName:'AD SOYAD', joinEmail:'E-POSTA', joinPass:'ŞFRE', joinBtn:'Üye Ol', joinHave:'Zaten üye misiniz?', joinGoLogin:'Giriş yapın',
+        loginTitle:'Giriş Yap', loginEmail:'E-POSTA VEYA MILES&SMILES NO', loginPass:'ŞFRE', loginBtn:'Giriş Yap', loginRemember:'Beni hatırla', loginForgot:'Şifremi unuttum', loginNoAccount:'Üye değil misiniz?', loginGoJoin:'Üye olun',
+        heroTitleCase:'Nereye uçuyoruz?', heroSubCase:'Havacılık Gelir Yönetimi Vaka Çalışması · Yılmaz Ailesi senaryosu · 2 MCP kaynağı',
+        tabSearch:'Uçuş ara', tabCheckin:'Check-in', tabManage:'Rezervasyonunu yönet', tabStatus:'Uçuş durumu',
+        lblFrom:'NEREDEN', lblTo:'NEREYE', lblDate:'GİDİŞ', lblReturnDate:'DÖNÜŞ', lblTrip:'SEYAHAT TİPİ', lblAdult:'YETİŞKİN', lblChild:'ÇOCUK', lblInfant:'BEBEK', lblPassengers:'YOLCULAR',
+        optOW:'Tek yön', optRT:'Gidiş-dönüş', changeableOnly:'Sadece değiştirilebilir', searchBtn:'Uçuş ara',
+        paxSingular:'Yolcu', paxPlural:'Yolcu',
+        feat1t:'Dinamik fiyatlandırma', feat1d:'Kalkışa 2 gün kala ×1.45, 7 gün kala ×1.25 çarpan. Erken alan kazanır.',
+        feat2t:'Gidiş-dönüş avantajı', feat2d:"Round-trip bilet, tek yönün %88'i. İki ayrı bilet neredeyse hiç mantıklı değil.",
+        feat3t:'AI Seyahat Danışmanı', feat3d:'Seyahat ihtiyacınızı anlatın, size en uygun seçenekleri sunalım.',
+        flightsFound:'uçuş bulundu', adult:'yetişkin', child:'çocuk', infant:'bebek', seatsNeeded:'koltuk gerekli',
+        tripRT:'gidiş-dönüş', tripOW:'tek yön', badgeRT:'GİDİŞ-DÖNÜŞ', badgeOW:'TEK YÖN', cheapest:'EN UYGUN',
+        changeable:'değiştirilebilir', notChangeable:'değişiklik yok', familyTax:'aile · vergi dahil',
+        baseFare:'Temel ücret (kişi)', baggage:'Bagaj', changeFee:'Değişiklik ücreti', free:'Ücretsiz',
+        lastSeatsPre:'Son', lastSeatsPost:'koltuk', seatsAvail:'koltuk müsait', buyBtn:'Seç ve satın al',
+        noFlights1:'Bu tarih/rota için satılabilir uçuş bulunamadı.', noFlights2:'Filtreleri gevşetmeyi veya başka tarih denemeyi düşünün.',
+        chatTitle:'Wingo', chatSub:'THY yapay zekâ seyahat asistanı', dataSource:'VERİ KAYNAĞI', srcOurs:'Bizim', srcThy:'THY Canlı', srcBoth:'İkisi',
+        greetTitle:'Merhaba, ben Wingo', greetBody:'Doğal dilde uçuş arayabilir, gerçek THY fiyatlarıyla karşılaştırabilir, onayınla bilet alabilirim. Yukarıdan veri kaynağını seçebilirsin.',
+        sug1:'Yarın IST-LHR en ucuz bilet', sug2:'Bizim fiyatla THY canlıyı karşılaştır', sug3:'Hangi havalimanları var?', sugRag:'Uçuşum iptal edilirse haklarım neler?',
+        chatPh:'Mesaj yazın…', chatNote:'Satın alma yalnızca senin açık onayınla · fiyatlar sistemden gelir · THY canlı read-only',
+        mThyNote:"Gerçek THY Canlı MCP'den sorgulanır", mStatus:'Uçuş durumu', mManage:'Rezervasyonunu yönet', mCheckin:'Online Check-in',
+        mFrom:'NEREDEN', mTo:'NEREYE', mDate:'TARİH', mQuery:'Sorgula', mPnr:'PNR / REZERVASYON KODU', mPnrPh:'6 haneli kod',
+        mSurname:'SOYAD', mSurnamePh:'Yolcu soyadı', mGetBooking:'Rezervasyon ve bagaj bilgilerini getir', mGetCheckin:'Check-in için rezervasyonu getir',
+        mQuerying:'THY sorgulanıyor…', mNoBooking:'Bu PNR/soyad ile rezervasyon bulunamadı. Gerçek bir Miles&Smiles rezervasyon kodu ile deneyin.',
+        mNoFlights:'Bu tarih/rota için uçuş bulunamadı.', mParseErr:'Yanıt çözümlenemedi.', mFound:'Rezervasyon bulundu', mFoundCheckin:'Check-in için rezervasyon bulundu',
+        tcAirports:'Havalimanları listelendi', tcSearch:'Bizim sistemde arandı', tcQuote:'Satın alma özeti hazırlandı', tcCommit:'Satın alma gerçekleşti', tcThy:'THY canlı MCP sorgulandı',
+        tcRag:'Resmi dokümanda arandı',
+        tcBundle:'AI Paketleri (Dynamic Bundling) oluşturuldu',
+        featBundleT:'AI Destekli Paketleme', featBundleD:'Seyahat ihtiyacınızı doğal dilde anlatın, AI size en uygun kişiselleştirilmiş paketleri oluştursun.',
+        sugBundle1:"Hafta sonu eşimle Londra'ya gitmek istiyorum. Lüks ve rahat bir yolculuk arıyorum.",
+        sugBundle2:"İş toplantısı için Amsterdam'a uçacağım. Bagajım yok, sadece ucuz olsun.",
+        cpTitle:'VAKA ÇALIŞMASI ANALİZ PANELİ', cpScenario:'Yılmaz Ailesi Senaryosu',
+        cpRoute:'Rota', cpPax:'Yolcular', cpPaxVal:'2 Yetişkin + 1 Çocuk + 1 Bebek',
+        cpSeats:'Koltuk ihtiyacı', cpConstraint:'Kısıt', cpChangeable:'Değiştirilebilir bilet',
+        cpRisk:'Kritik risk', cpRiskVal:'Dönüşte Q sınıfı = 3 koltuk',
+        cpRunBtn:'Senaryoyu Wingo ile çalıştır',
+        cpRunNote:'Agent aramayı yapar, değiştirilebilir fareleri filtreler, aile toplamını vergilerle hesaplar.',
+        cpArch:'AI Agent Orkestrasyon Mimarisi', cpSysStatus:'Canlı Sistem Durumu',
+        cpRules:'Fiyatlandırma Kuralları', cpDecisions:'Karar Noktaları',
+        cpSolution:'Takım 4 · Vaka Çözümü', cpSolutionSub:'8 sorunun cevabı — kilit hesaplar canlı fiyat motoruyla doğrulanır',
+        cpPdf:"Çözüm PDF'i", cpLog:'Tool Çağrı Logu', cpNoLog:"Henüz tool çağrısı yok. Wingo'ya bir soru sorun.",
+        cpD1:'Niyet analizi, tool seçimi, sıralama', cpD2:'Arama, fiyat kırılımı, teklif hazırlama',
+        cpD3:'Fiyat/müsaitlik', cpD3n:'— LLM asla üretmez', cpD4:'Satın alma onayı', cpD4n:'— zorunlu',
+        cpL1:'Web sitesi · Wingo yan paneli', cpL1n:'(doğal dil)',
+        cpL3:'Grounding · quote→onay→commit · read/write ayrımı',
+        cpOurPricer:'Bizim Pricer', cpOurPricerSub:'arama · fiyat · SATIN ALMA',
+        cpThyLive:'THY Canlı MCP',
+        cpLayerSys:'SİSTEMLER', cpLayerCh:'KANAL', cpLayerAg:'AGENT', cpLayerGr:'GUARDRAIL',
+        cpRefresh:'↻ yenile',
+        searching:'Aranıyor…',
+        direct:'Direkt', aircraft:'Uçak tipi', fromPricePP:'Kişi başı başlangıç', totalDuration:'Toplam seyahat süresi',
+        pkgDetails:'Paket detayları', recommended:'Önerilen', classLbl:'sınıfı',
+        cabinBag:'Kabin bagajı', baggageRight:'Bagaj hakkı', seatSelect:'Koltuk seçimi',
+        seatStandard:'Standart koltuk', seatPreferred:'Ön sıra ve standart',
+        freeChange:'Ücretsiz değişiklik', sameDayChange:'Aynı gün önceki uçuşa değişiklik',
+        refundRight:'Kesintisiz iade', deduction:'kesinti', milesRow:'Mil', milesUnit:'Mil',
+        fastTrack:'Fast track', seatsLeftRow:'Kalan koltuk', economyCabin:'Ekonomi', businessCabin:'Business',
+        flightDetails:'Uçuş detayları', included:'Var', unavailable:'Yok', selectFare:'Seç', balancedPick:'Dengeli seçim',
+        showPackages:'Paketleri ve Fiyatları İncele', hidePackages:'Paketleri Gizle',
+        kpiFlightsL:'UÇUŞ', kpiFaresL:'FARE SATIRI', kpiToolsL:'AGENT TOOL', kpiPnrsL:'REZERVASYON',
+        prFeatured:'ÖNE ÇIKAN ÜCRETLER', prTitle:'Bu haftanın popüler rotaları',
+        prSub:'Canlı envanterden en uygun başlangıç fiyatları.', prFrom:'başlangıç',
+        cpDocs:'belge', cpSourceDocs:'kaynak doküman',
+        cpNights:'7 gece', cpNoSeat:'(bebek koltuksuz)',
+        cpLoading:'yükleniyor…', cpVerified:'MOTOR DOĞRULADI', cpMismatch:'UYUŞMUYOR',
+        cpOptA:'SEÇENEK A (5–12 Eyl)', cpOptB:'SEÇENEK B (15–22 Eyl)', cpSaving:'TASARRUF (B < A)',
+        cpSavingSub:'B tercih edilirse aile başına', cpClass:'sınıfı · taban',
+        cpProvider:'LLM sağlayıcı', cpModel:'Model', cpToolCount:'Agent tool sayısı',
+        cpConnected:'bağlı (OAuth)', cpNoAuth:'giriş yok', cpAirportFlight:'Havalimanı / uçuş',
+        cpSeatsAvail:'Müsait koltuk', cpTicketsSold:'Satılan bilet', cpPriceRange:'Fiyat aralığı',
+        cpAdult:'Yetişkin', cpChild:'Çocuk (2–11)', cpInfant:'Bebek (<2, koltuksuz)',
+        cpTax:'Vergi (kişi başı)', cpTaxNote:'bebek muaf', cpRtFactor:'Gidiş-dönüş katsayısı',
+        cpDemand:'Talep ×', cpCalls:'çağrı', cpSuccess:'başarılı', cpAvg:'ort.',
+        cpTime:'SAAT', cpTool:'TOOL', cpStatus:'DURUM', cpDur:'SÜRE', cpInput:'GİRDİ',
+        cpOk:'başarılı', cpFail:'hata',
+        footL:'© Dynamic Pricer — Yaz Staj Programı vaka çalışması demosu. Resmî Turkish Airlines ürünü değildir.', footR:'Pricing Systems · Grup 4 · AI Agent Architecture',
+        footLThy:'© 2024 Turkish Airlines. Tüm hakları saklıdır.', footRThy:'Gizlilik Politikası · Kullanım Koşulları · İletişim',
+      },
+      en: {
+        topStrip:'Türkiye · English · TRY', help:'Help', deals:'Deals',
+        navPlan:'Plan a Trip', navManage:'Check-in & Manage', navChat:'Wingo',
+        heroSubThy:'Flights to 300+ destinations · clear pricing · easy booking',
+        thyLogoSub:'WIDEN YOUR WORLD',
+        caseSub:'PRICING SYSTEMS · AI AGENT MVP · GROUP 4', badgeOurs:'Our system', badgeThy:'THY Live MCP', badgeAgent:'Assistant',
+        navJoin:'Join', navLogin:'Log in',
+        joinTitle:'Join', joinName:'FULL NAME', joinEmail:'EMAIL', joinPass:'PASSWORD', joinBtn:'Join', joinHave:'Already a member?', joinGoLogin:'Log in',
+        loginTitle:'Log in', loginEmail:'EMAIL OR MILES&SMILES NO', loginPass:'PASSWORD', loginBtn:'Log in', loginRemember:'Remember me', loginForgot:'Forgot password', loginNoAccount:'Not a member?', loginGoJoin:'Join now',
+        heroTitleCase:'Where are we flying?', heroSubCase:'Airline Revenue Management Case Study · Yılmaz Family scenario · 2 MCP sources',
+        tabSearch:'Search flights', tabCheckin:'Check-in', tabManage:'Manage booking', tabStatus:'Flight status',
+        lblFrom:'FROM', lblTo:'TO', lblDate:'DEPARTURE', lblReturnDate:'RETURN', lblTrip:'TRIP TYPE', lblAdult:'ADULT', lblChild:'CHILD', lblInfant:'INFANT', lblPassengers:'PASSENGERS',
+        optOW:'One way', optRT:'Round trip', changeableOnly:'Changeable only', searchBtn:'Search',
+        paxSingular:'Passenger', paxPlural:'Passengers',
+        feat1t:'Dynamic pricing', feat1d:'×1.45 within 2 days of departure, ×1.25 within 7. Book early, pay less.',
+        feat2t:'Round-trip advantage', feat2d:'A round-trip fare is 88% of one-way. Two separate one-ways rarely make sense.',
+        featBundleT:'AI-Powered Bundling', featBundleD:'Describe your travel needs in plain English, and AI will build personalized bundles (Economy, Recommended, Comfort).',
+        feat3t:'AI Travel Advisor', feat3d:'Tell us your travel needs and we\'ll find the best options for you.',
+        flightsFound:'flights found', adult:'adult', child:'child', infant:'infant', seatsNeeded:'seats needed',
+        tripRT:'round trip', tripOW:'one way', badgeRT:'ROUND TRIP', badgeOW:'ONE WAY', cheapest:'BEST VALUE',
+        changeable:'changeable', notChangeable:'no changes', familyTax:'family · incl. tax',
+        baseFare:'Base fare (per person)', baggage:'Baggage', changeFee:'Change fee', free:'Free',
+        lastSeatsPre:'Only', lastSeatsPost:'seats left', seatsAvail:'seats available', buyBtn:'Select & book',
+        noFlights1:'No bookable flights for this date/route.', noFlights2:'Try relaxing the filters or a different date.',
+        chatTitle:'Wingo', chatSub:'THY AI travel assistant', dataSource:'DATA SOURCE', srcOurs:'Ours', srcThy:'THY Live', srcBoth:'Both',
+        greetTitle:"Hi, I'm Wingo", greetBody:'Ask in plain language: I can search flights, compare with real THY prices, and book with your approval. Pick a data source above.',
+        sugBundle1:"I want to fly to London with my wife this weekend. I'm looking for a luxurious trip.",
+        sugBundle2:"Flying to Amsterdam for business. No luggage, just keep it cheap.",
+        sug2:'Compare our price with THY live', sug3:'Which airports are available?', sugRag:'What are my rights if my flight is cancelled?',
+        chatPh:'Type a message…', chatNote:'Purchases only with your explicit approval · prices come from the system · THY live is read-only',
+        mThyNote:'Queried from the real THY Live MCP', mStatus:'Flight status', mManage:'Manage booking', mCheckin:'Online check-in',
+        mFrom:'FROM', mTo:'TO', mDate:'DATE', mQuery:'Search', mPnr:'PNR / BOOKING CODE', mPnrPh:'6-char code',
+        mSurname:'SURNAME', mSurnamePh:'Passenger surname', mGetBooking:'Retrieve booking & baggage', mGetCheckin:'Retrieve booking for check-in',
+        mQuerying:'Querying THY…', mNoBooking:'No booking found for this PNR/surname. Try a real Miles&Smiles booking code.',
+        mNoFlights:'No flights for this date/route.', mParseErr:'Could not parse response.', mFound:'Booking found', mFoundCheckin:'Booking found for check-in',
+        tcAirports:'Airports listed', tcSearch:'Searched our system', tcQuote:'Purchase summary prepared', tcCommit:'Purchase completed', tcThy:'THY live MCP queried',
+        tcRag:'Official documents searched',
+        tcBundle:'AI Bundles (Dynamic Bundling) generated',
+        cpTitle:'CASE STUDY ANALYSIS PANEL', cpScenario:'Yılmaz Family Scenario',
+        cpRoute:'Route', cpPax:'Passengers', cpPaxVal:'2 Adults + 1 Child + 1 Infant',
+        cpSeats:'Seats needed', cpConstraint:'Constraint', cpChangeable:'Changeable ticket',
+        cpRisk:'Critical risk', cpRiskVal:'Return leg Q class = 3 seats',
+        cpRunBtn:'Run scenario with Wingo',
+        cpRunNote:'The agent searches, filters changeable fares and computes the family total with taxes.',
+        cpArch:'AI Agent Orchestration Architecture', cpSysStatus:'Live System Status',
+        cpRules:'Pricing Rules', cpDecisions:'Decision Points',
+        cpSolution:'Team 4 · Case Solution', cpSolutionSub:'Answers to 8 questions — key figures verified by the live pricing engine',
+        cpPdf:'Solution PDF', cpLog:'Tool Call Log', cpNoLog:'No tool calls yet. Ask Wingo a question.',
+        cpD1:'Intent analysis, tool selection, ordering', cpD2:'Search, price breakdown, quote preparation',
+        cpD3:'Price/availability', cpD3n:'— never generated by the LLM', cpD4:'Purchase approval', cpD4n:'— mandatory',
+        cpL1:'Website · Wingo side panel', cpL1n:'(natural language)',
+        cpL3:'Grounding · quote→approval→commit · read/write separation',
+        cpOurPricer:'Our Pricer', cpOurPricerSub:'search · pricing · PURCHASE',
+        cpThyLive:'THY Live MCP',
+        cpLayerSys:'SYSTEMS', cpLayerCh:'CHANNEL', cpLayerAg:'AGENT', cpLayerGr:'GUARDRAIL',
+        cpRefresh:'↻ refresh',
+        searching:'Searching…',
+        direct:'Direct', aircraft:'Aircraft', fromPricePP:'From, per person', totalDuration:'Total travel duration',
+        pkgDetails:'Package details', recommended:'Recommended', classLbl:'class',
+        cabinBag:'Cabin baggage', baggageRight:'Checked baggage', seatSelect:'Seat selection',
+        seatStandard:'Standard seat', seatPreferred:'Front row & standard',
+        freeChange:'Free change', sameDayChange:'Same-day change to earlier flight',
+        refundRight:'Refund without penalty', deduction:'deduction', milesRow:'Miles', milesUnit:'Miles',
+        fastTrack:'Fast track', seatsLeftRow:'Seats left', economyCabin:'Economy', businessCabin:'Business',
+        flightDetails:'Flight details', included:'Included', unavailable:'Not available', selectFare:'Select', balancedPick:'Balanced pick',
+        showPackages:'View Packages & Prices', hidePackages:'Hide Packages',
+        kpiFlightsL:'FLIGHTS', kpiFaresL:'FARE ROWS', kpiToolsL:'AGENT TOOLS', kpiPnrsL:'BOOKINGS',
+        prFeatured:'FEATURED FARES', prTitle:'Popular routes this week',
+        prSub:'Lowest starting prices from our live inventory.', prFrom:'from',
+        cpDocs:'docs', cpSourceDocs:'source documents',
+        cpNights:'7 nights', cpNoSeat:'(infant, no seat)',
+        cpLoading:'loading…', cpVerified:'ENGINE VERIFIED', cpMismatch:'MISMATCH',
+        cpOptA:'OPTION A (Sep 5–12)', cpOptB:'OPTION B (Sep 15–22)', cpSaving:'SAVING (B < A)',
+        cpSavingSub:'per family if B is chosen', cpClass:'class · base',
+        cpProvider:'LLM provider', cpModel:'Model', cpToolCount:'Agent tools',
+        cpConnected:'connected (OAuth)', cpNoAuth:'not signed in', cpAirportFlight:'Airports / flights',
+        cpSeatsAvail:'Available seats', cpTicketsSold:'Tickets sold', cpPriceRange:'Price range',
+        cpAdult:'Adult', cpChild:'Child (2–11)', cpInfant:'Infant (<2, no seat)',
+        cpTax:'Tax (per person)', cpTaxNote:'infant exempt', cpRtFactor:'Round-trip factor',
+        cpDemand:'Demand ×', cpCalls:'calls', cpSuccess:'successful', cpAvg:'avg',
+        cpTime:'TIME', cpTool:'TOOL', cpStatus:'STATUS', cpDur:'DURATION', cpInput:'INPUT',
+        cpOk:'success', cpFail:'error',
+        footL:'© Dynamic Pricer — Summer Internship case-study demo. Not an official Turkish Airlines product.', footR:'Pricing Systems · Group 4 · AI Agent Architecture',
+        footLThy:'© 2024 Turkish Airlines. All rights reserved.', footRThy:'Privacy Policy · Terms of Use · Contact',
+      }
+    };
+    let lang = localStorage.getItem('ui-lang') || 'tr';
+    function t(key){ return (I18N[lang] && I18N[lang][key]) || (I18N.tr[key]) || key; }
+    function applyLang(){
+      document.documentElement.lang = lang;
+      document.querySelectorAll('[data-i18n]').forEach(el => { const k = el.getAttribute('data-i18n'); if (I18N[lang][k] !== undefined) el.textContent = I18N[lang][k]; });
+      document.querySelectorAll('[data-i18n-ph]').forEach(el => { const k = el.getAttribute('data-i18n-ph'); if (I18N[lang][k] !== undefined) el.placeholder = I18N[lang][k]; });
+      const set = (id, on) => { const b = document.getElementById(id); b.className = 'lang-btn px-2.5 py-1.5 rounded-full transition ' + (on ? 'text-white' : 'text-slate-500 hover:text-slate-800'); b.style.backgroundColor = on ? 'var(--accent-dark)' : ''; };
+      set('langTr', lang==='tr'); set('langEn', lang==='en');
+      // Re-render JS-generated panel content in the newly selected language
+      if (typeof loadStats === 'function') loadStats();
+      if (typeof loadCaseSolution === 'function') loadCaseSolution();
+      if (typeof paintStt === 'function') paintStt();
+      if (window.formPickersReady && typeof updateDatePreview === 'function') updateDatePreview();
+      if (window.formPickersReady && typeof renderCalendar === 'function') renderCalendar();
+      if (window.formPickersReady && typeof updatePax === 'function') updatePax();
+    }
+    document.getElementById('langTr').onclick = () => { lang='tr'; localStorage.setItem('ui-lang','tr'); applyLang(); };
+    document.getElementById('langEn').onclick = () => { lang='en'; localStorage.setItem('ui-lang','en'); applyLang(); };
+
+    // Flight result panels
+    window.toggleFlightPanel = function(cardId, panel, event) {
+      if (event && event.target && event.target.closest('.buy-btn')) return;
+      const names = ['flight', 'eco', 'biz'];
+      const target = document.getElementById(panel + '-details-' + cardId);
+      if (!target) return;
+      const shouldOpen = target.classList.contains('hidden');
+
+      names.forEach((name) => {
+        const detail = document.getElementById(name + '-details-' + cardId);
+        if (detail) detail.classList.add('hidden');
+        document.querySelectorAll(`[data-panel-btn="${name}-${cardId}"]`).forEach((btn) => {
+          btn.classList.remove('is-active');
+          btn.setAttribute('aria-expanded', 'false');
+        });
+      });
+
+      if (shouldOpen) {
+        target.classList.remove('hidden');
+        document.querySelectorAll(`[data-panel-btn="${panel}-${cardId}"]`).forEach((btn) => {
+          btn.classList.add('is-active');
+          btn.setAttribute('aria-expanded', 'true');
+        });
+      }
+    };
+
+    // ================= THY SERVIS MODAL =================
+    const thyModal = document.getElementById('thyModal');
+    const thyTitle = document.getElementById('thyModalTitle');
+    const thyForm = document.getElementById('thyModalForm');
+    const thyResult = document.getElementById('thyModalResult');
+    const inputCls = 'w-full rounded-xl premium-input px-3 py-2.5 text-sm font-semibold outline-none';
+    const btnCls = 'w-full btn-primary text-white font-bold py-2.5 rounded-xl mt-1';
+
+    function bookingForm(btnText){
+      return `<div><label class="block text-[11px] font-bold text-slate-400 mb-1">${t('mPnr')}</label><input id="bk_pnr" placeholder="${t('mPnrPh')}" class="${inputCls}"></div>
+        <div class="mt-3"><label class="block text-[11px] font-bold text-slate-400 mb-1">${t('mSurname')}</label><input id="bk_sn" placeholder="${t('mSurnamePh')}" class="${inputCls}"></div>
+        <button id="bk_go" class="${btnCls}">${btnText}</button>`;
+    }
+    const THY_VIEWS = {
+      status: { titleKey:'mStatus', icon:'i-clock',
+        form: () => `<div class="grid grid-cols-2 gap-3">
+            <div><label class="block text-[11px] font-bold text-slate-400 mb-1">${t('mFrom')}</label><input id="ts_o" value="IST" class="${inputCls}"></div>
+            <div><label class="block text-[11px] font-bold text-slate-400 mb-1">${t('mTo')}</label><input id="ts_d" value="LHR" class="${inputCls}"></div>
+          </div>
+          <div class="mt-3"><label class="block text-[11px] font-bold text-slate-400 mb-1">${t('mDate')}</label><input id="ts_date" type="date" class="${inputCls}"></div>
+          <button id="ts_go" class="${btnCls}">${t('mQuery')}</button>`,
+        run: async () => renderStatus(await post('/thy/flight-status', { origin:v('ts_o'), destination:v('ts_d'), date:v('ts_date') }))
+      },
+      manage: { titleKey:'mManage', icon:'i-clipboard', form: () => bookingForm(t('mGetBooking')),
+        run: async () => renderBooking(await post('/thy/booking', { pnr:v('bk_pnr'), surname:v('bk_sn') }), false) },
+      checkin: { titleKey:'mCheckin', icon:'i-bag', form: () => bookingForm(t('mGetCheckin')),
+        run: async () => renderBooking(await post('/thy/booking', { pnr:v('bk_pnr'), surname:v('bk_sn') }), true) },
+    };
+    function v(id){ return (document.getElementById(id)?.value || '').trim(); }
+    function loading(){ thyResult.innerHTML = `<div class="text-center text-slate-400 text-sm py-3"><span class="typing"><span>●</span> <span>●</span> <span>●</span></span> ${t('mQuerying')}</div>`; }
+    async function post(url, body){ loading(); try { const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); } catch(e){ return {status:'error', message:String(e)}; } }
+    function errBox(msg){ return `<div class="bg-amber-50 text-amber-800 ring-1 ring-amber-200 rounded-xl p-3 text-sm font-medium">${msg}</div>`; }
+    function renderStatus(d){
+      if (d.status !== 'ok'){ thyResult.innerHTML = errBox(d.message || t('mNoFlights')); return; }
+      let data; try { data = JSON.parse(d.text); } catch(_) { thyResult.innerHTML = errBox(t('mParseErr')); return; }
+      const flights = data.flights || [];
+      if (!flights.length){ thyResult.innerHTML = errBox((data.statusDesc||'').replace(/[{}]/g,'') || t('mNoFlights')); return; }
+      let html = '';
+      if (data.statusDesc) html += `<div class="text-[11px] text-slate-400 mb-2 font-medium">${data.statusDesc.replace(/[{}]/g,'')}</div>`;
+      html += flights.slice(0,6).map(f => {
+        const num = 'TK'+(f.flightCode?.flightNumber||''); const dep=f.scheduledDepartureAirport?.code||''; const arr=f.scheduledArrivalAirport?.code||'';
+        const st = f.statusText || f.status?.description || f.departureStatusText || '';
+        return `<div class="rounded-xl ring-1 ring-slate-200 p-3 mb-2 flex items-center justify-between">
+          <div><div class="font-bold text-sm">${num}</div><div class="text-[11px] text-slate-400 font-medium">${dep} → ${arr} · ${f.flightDate||''}</div></div>
+          ${st ? `<span class="text-[10px] font-bold acc-50 acc-text px-2 py-1 rounded-full">${st}</span>` : ''}</div>`;
+      }).join('');
+      thyResult.innerHTML = html;
+    }
+    function renderBooking(d, checkin){
+      const det = d.details || {};
+      if (det.status !== 'ok'){ thyResult.innerHTML = errBox(det.message || t('mNoBooking')); return; }
+      let data; try { data = JSON.parse(det.text); } catch(_) { data = null; }
+      if (!data || data.error || (det.text||'').toLowerCase().includes('error')){ thyResult.innerHTML = errBox(t('mNoBooking')); return; }
+      thyResult.innerHTML = `<div class="rounded-xl ring-1 ring-slate-200 p-3 text-sm">
+        <div class="font-bold acc-text mb-1">${checkin ? t('mFoundCheckin') : t('mFound')}</div>
+        <pre class="text-[11px] text-slate-600 whitespace-pre-wrap max-h-52 overflow-y-auto">${(det.text||'').slice(0,1200)}</pre></div>`;
+    }
+    function openThy(key){
+      const view = THY_VIEWS[key]; if (!view) return;
+      thyTitle.innerHTML = `<svg class="ic"><use href="#${view.icon}"/></svg> ${t(view.titleKey)}`;
+      thyForm.innerHTML = view.form(); thyResult.innerHTML = '';
+      thyModal.classList.remove('hidden'); thyModal.classList.add('flex');
+      const go = thyForm.querySelector('button'); if (go) go.onclick = view.run;
+      const dateEl = document.getElementById('ts_date'); if (dateEl){ const dt=new Date(); dt.setDate(dt.getDate()+2); dateEl.value = dt.toISOString().slice(0,10); }
+    }
+    document.querySelectorAll('.thy-tab').forEach(b => b.onclick = () => openThy(b.dataset.thy));
+    document.getElementById('thyModalClose').onclick = () => { thyModal.classList.add('hidden'); thyModal.classList.remove('flex'); };
+    thyModal.onclick = (e) => { if (e.target === thyModal){ thyModal.classList.add('hidden'); thyModal.classList.remove('flex'); } };
+
+    // ================= THEME ==================
+    const root = document.documentElement;
+    const btnThy = document.getElementById('themeThy');
+    const btnCase = document.getElementById('themeCase');
+    function applyTheme(th) {
+      root.dataset.theme = th; localStorage.setItem('ui-theme', th);
+      [btnThy, btnCase].forEach(b => { b.className='theme-btn px-3 py-1.5 rounded-full transition text-slate-500 hover:text-slate-800'; b.style.backgroundColor=''; });
+      const active = th==='thy' ? btnThy : btnCase;
+      active.className='theme-btn px-3 py-1.5 rounded-full transition text-white'; active.style.backgroundColor='var(--accent-dark)';
+    }
+    btnThy.onclick = () => applyTheme('thy');
+    btnCase.onclick = () => applyTheme('case');
+    applyTheme(localStorage.getItem('ui-theme') || 'thy');
+    applyLang();
+
+    // ================= CHAT =================
+    const SVG = {
+      db:'<path d="M12 2c5 0 9 1.3 9 3s-4 3-9 3-9-1.3-9-3 4-3 9-3z"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+      globe:'<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 1 4 9 14 14 0 0 1-4 9 14 14 0 0 1-4-9 14 14 0 0 1 4-9z"/>',
+      receipt:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+      check:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+      search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+    };
+    function ico(name){ return '<svg class="ic" style="width:.95em;height:.95em" viewBox="0 0 24 24">'+(SVG[name]||'')+'</svg>'; }
+    const TOOL_META = {
+      list_airports:{i:'search',k:'tcAirports'}, search_flights:{i:'db',k:'tcSearch'},
+      quote_purchase:{i:'receipt',k:'tcQuote'}, commit_purchase:{i:'check',k:'tcCommit'}, search_knowledge_base:{i:'receipt',k:'tcRag'},
+      search_thy_live:{i:'globe',k:'tcThy'},
+      build_dynamic_bundles:{i:'layers',k:'tcBundle'},
+    };
+
+    const panel = document.getElementById('chatPanel');
+    const messages = document.getElementById('messages');
+    const input = document.getElementById('chatInput');
+
+    function openChat(fullscreen) {
+      if (fullscreen) {
+        panel.classList.add('chat-fullscreen');
+      } else {
+        panel.classList.remove('chat-fullscreen');
+      }
+      panel.classList.remove('translate-x-full');
+      input.focus();
+    }
+    function closeChat() {
+      panel.classList.add('translate-x-full');
+      // keep fullscreen class so transition looks smooth; remove after transition
+      panel.addEventListener('transitionend', () => { panel.classList.remove('chat-fullscreen'); }, { once: true });
+    }
+
+    document.getElementById('chatBtn').onclick = () => openChat(false);
+    document.querySelectorAll('.chatOpenBtn').forEach(btn => btn.onclick = () => openChat(true));
+    document.getElementById('chatClose').onclick = closeChat;
+
+    let source = 'both';
+    document.querySelectorAll('.src-btn').forEach(btn => {
+      btn.onclick = () => {
+        source = btn.dataset.source;
+        document.querySelectorAll('.src-btn').forEach(b => {
+          const base = 'src-btn text-[11px] font-bold py-1.5 rounded-lg transition inline-flex items-center justify-center gap-1.5';
+          if (b === btn) { b.className = base + ' bg-white shadow-sm'; b.style.color='var(--accent-dark)'; }
+          else { b.className = base + ' text-white/70 hover:text-white'; b.style.color=''; }
+        });
+      };
+    });
+
+    // Minimal, dependency-free Markdown -> HTML for chat replies.
+    // Escapes HTML first (XSS-safe), then converts the small subset of Markdown
+    // the model actually produces: **bold**, bullet/numbered lists, line breaks.
+    function escapeHtml(s){
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function renderMarkdown(raw){
+      const lines = escapeHtml(raw).split('\n');
+      let html = '', inList = false;
+      const inline = (t) => t
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+      for (const line of lines) {
+        const heading = line.match(/^\s*(#{2,4})\s+(.*)/);
+        if (heading) {
+          if (inList) { html += '</ul>'; inList = false; }
+          html += `<div class="font-bold text-[13px] mt-2 mb-0.5 acc-text">${inline(heading[2])}</div>`;
+          continue;
+        }
+        const bullet = line.match(/^\s*[-*]\s+(.*)/);
+        const numbered = line.match(/^\s*\d+\.\s+(.*)/);
+        if (bullet || numbered) {
+          if (!inList) { html += '<ul class="list-disc pl-5 space-y-0.5">'; inList = true; }
+          html += `<li>${inline(bullet ? bullet[1] : numbered[1])}</li>`;
+        } else {
+          if (inList) { html += '</ul>'; inList = false; }
+          html += line.trim() ? `<p>${inline(line)}</p>` : '<div class="h-2"></div>';
+        }
+      }
+      if (inList) html += '</ul>';
+      return html;
+    }
+
+    function userBubble(text){ const el=document.createElement('div'); el.className='chat-bubble-user text-white rounded-2xl rounded-tr-md p-4 ml-10 shadow-sm fade-in'; el.textContent=text; messages.appendChild(el); scroll(); }
+    function botBubble(){ const el=document.createElement('div'); el.className='chat-bubble-bot rounded-2xl rounded-tl-md p-4 mr-6 shadow-sm fade-in space-y-1.5'; el.innerHTML='<span class="typing text-slate-400"><span>●</span> <span>●</span> <span>●</span></span>'; messages.appendChild(el); scroll(); return el; }
+    function toolChips(trace){
+      if (!trace || !trace.length) return null;
+      const wrap=document.createElement('div'); wrap.className='flex flex-wrap gap-1.5 mr-6 fade-in';
+      trace.forEach(tr => { const m=TOOL_META[tr.tool]||{i:'search',k:tr.tool}; const chip=document.createElement('span'); chip.className='inline-flex items-center gap-1.5 text-[10px] font-bold bg-white text-slate-600 ring-1 ring-slate-200 px-2 py-1 rounded-full'; chip.innerHTML=ico(m.i)+'<span>'+t(m.k)+'</span>'; chip.title=JSON.stringify(tr.input); wrap.appendChild(chip); });
+      return wrap;
+    }
+    function scroll(){ messages.scrollTop = messages.scrollHeight; }
+
+    function renderBundleCards(trace) {
+      if (!trace || !trace.length) return null;
+      const bundleTrace = trace.find(t => t.tool === 'build_dynamic_bundles');
+      if (!bundleTrace || !bundleTrace.result || !bundleTrace.result.bundles) return null;
+      
+      const res = bundleTrace.result;
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-3 mt-4 fade-in';
+      
+      const fl = res.flight;
+      const pax = res.passengers;
+      wrap.innerHTML = `<div class="text-[12px] font-bold text-slate-500 text-center mb-1">${fl.origin} → ${fl.destination} · ${fl.date} · ${fl.hour}</div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        ${res.bundles.map((b, idx) => `
+          <div class="bg-white rounded-xl ring-1 ${idx === 1 ? 'ring-[var(--accent-dark)] shadow-md' : 'ring-slate-200'} p-4 flex flex-col relative overflow-hidden">
+            ${idx === 1 ? `<div class="absolute top-0 right-0 left-0 bg-[var(--accent-dark)] text-white text-[10px] font-black text-center py-1 uppercase tracking-widest">${lang==='en'?'Recommended':'Önerilen'}</div><div class="mt-4"></div>` : ''}
+            <div class="font-bold text-[15px] mb-2">${lang === 'en' ? b.label_en : b.label_tr}</div>
+            
+            ${b.discount_amount_usd > 0 ? `
+              <div class="flex items-end gap-2 mb-1">
+                <div class="text-[24px] font-black tracking-tight ${idx === 1 ? 'acc-text' : 'text-slate-800'}">$${b.bundle_total_usd}</div>
+                <div class="text-sm text-slate-400 font-bold line-through mb-1.5">$${b.original_total_usd}</div>
+              </div>
+              <div class="text-[10px] font-bold text-emerald-600 mb-2">${lang==='en'?`You save $${b.discount_amount_usd}`:`$${b.discount_amount_usd} indirim kazandınız`}</div>
+            ` : `
+              <div class="text-[24px] font-black tracking-tight ${idx === 1 ? 'acc-text' : 'text-slate-800'} mb-1">$${b.bundle_total_usd}</div>
+            `}
+            
+            <div class="text-[10px] text-slate-400 font-medium mb-3 border-b border-slate-100 pb-3">
+              <div class="flex justify-between mb-1"><span>${lang==='en'?'Base fare':'Baz uçuş (Tüm yolcular)'}:</span> <span class="font-bold">$${b.fare_family_total_usd}</span></div>
+              <div class="flex justify-between"><span>${lang==='en'?'Extras total':'Ekstra hizmetler'}:</span> <span class="font-bold">$${b.extras_total_usd}</span></div>
+            </div>
+            
+            <div class="flex-1 space-y-2.5 mb-5 text-[11px]">
+              ${b.included.map(inc => `<div class="flex items-start gap-2"><span class="text-emerald-500 mt-0.5">✓</span><span class="text-slate-600 font-medium">${lang==='en'?inc.name_en:inc.name_tr}</span></div>`).join('')}
+              ${b.extras.map(ext => `<div class="flex items-start gap-2"><span class="text-[var(--accent-dark)] mt-0.5 font-black">+</span><span class="text-slate-700 font-bold">${lang==='en'?ext.name_en:ext.name_tr}</span></div>`).join('')}
+            </div>
+            
+            <button class="w-full mt-auto ${idx === 1 ? 'btn-primary text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'} font-bold py-2.5 rounded-lg text-xs transition"
+              onclick="buyBundle(${b.availability_id}, '${fl.flight_number}', '${b.fare_class}', '${fl.date}', '${fl.origin}-${fl.destination}', ${pax.adults}, ${pax.children}, ${pax.babies})">
+              ${lang==='en'?'Select & Book':'Seç ve Satın Al'}
+            </button>
+          </div>
+        `).join('')}
+        </div>`;
+      return wrap;
+    }
+    
+    window.buyBundle = (fid, flight, cls, date, route, a, c, b) => {
+      let msg;
+      if (lang === 'en') {
+        const paxStr = `${a} adult` + (c>0?`, ${c} child`:'') + (b>0?`, ${b} infant`:'');
+        msg = `I want to book the "${cls}" fare (fare #${fid}) on flight ${flight} which is part of the bundle I selected. Date ${date}, ${route}, ${paxStr}. Please prepare the purchase summary.`;
+      } else {
+        const paxStr = `${a} yetişkin` + (c>0?`, ${c} çocuk`:'') + (b>0?`, ${b} bebek`:'');
+        msg = `Seçtiğim paketteki ${flight} uçuşu, "${cls}" tarifesini (fare #${fid}) satın almak istiyorum. Tarih ${date}, ${route}, ${paxStr}. Lütfen satın alma özeti hazırla.`;
+      }
+      send(msg);
+    };
+
+    async function send(text){
+      userBubble(text); const bubble=botBubble();
+      try { 
+        const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text, source, lang})}); 
+        const data=await r.json(); 
+        const chips=toolChips(data.tool_trace); 
+        if (chips) messages.insertBefore(chips,bubble); 
+        bubble.innerHTML=renderMarkdown(data.reply||'(—)');
+
+        // Render bundle cards if build_dynamic_bundles was called
+        const bundleCards = renderBundleCards(data.tool_trace);
+        if (bundleCards) {
+          // Insert after the bubble
+          bubble.parentNode.insertBefore(bundleCards, bubble.nextSibling);
+        }
+      }
+      catch(err){ bubble.textContent=(lang==='en'?'Connection error: ':'Bağlantı hatası: ')+err; }
+      scroll();
+      if (typeof loadStats === 'function') loadStats();  // Case paneli logunu tazele
+    }
+    document.getElementById('chatForm').addEventListener('submit', (e)=>{ e.preventDefault(); const text=input.value.trim(); if(!text) return; input.value=''; send(text); });
+    document.querySelectorAll('.sug').forEach(b => b.onclick = () => { panel.classList.remove('translate-x-full'); send(b.textContent.trim()); });
+
+    document.querySelectorAll('.buy-btn').forEach(b => b.onclick = () => {
+      const d = b.dataset;
+      panel.classList.remove('translate-x-full');
+      let msg;
+      if (lang === 'en') {
+        const pax = `${d.a} adult` + (d.c>0?`, ${d.c} child`:'') + (d.b>0?`, ${d.b} infant`:'');
+        msg = `I want to book the "${d.cls}" fare (fare #${d.fid}) on flight ${d.flight}. Date ${d.date}, ${d.route}, ${pax}. Please prepare the purchase summary.`;
+      } else {
+        const pax = `${d.a} yetişkin` + (d.c>0?`, ${d.c} çocuk`:'') + (d.b>0?`, ${d.b} bebek`:'');
+        msg = `${d.flight} uçuşunda "${d.cls}" tarifesini (fare #${d.fid}) satın almak istiyorum. Tarih ${d.date}, ${d.route}, ${pax}. Lütfen satın alma özeti hazırla.`;
+      }
+      send(msg);
+    });
+
+    // ===== CASE PANEL: live statistics + tool call log =====
+    const TOOL_TR = {
+      list_airports:'Havalimanları', search_flights:'Uçuş arama', quote_purchase:'Satın alma özeti',
+      commit_purchase:'Satın alma', search_thy_live:'THY canlı MCP', build_dynamic_bundles:'AI paketleme'
+    };
+    function row(label, value, extra){
+      return `<div class="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0">
+        <span class="text-slate-400 font-medium">${label}</span>
+        <span class="font-bold ${extra||''}">${value}</span></div>`;
+    }
+    async function loadStats(){
+      let d; try { d = await (await fetch('/stats')).json(); } catch(e){ return; }
+      const inv = d.inventory, ag = d.agent, mcp = d.thy_mcp, pr = d.pricing_rules, ob = d.observability;
+      const fmt = n => (n||0).toLocaleString('tr-TR');
+
+      const setTxt = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+      setTxt('kpiFlights', fmt(inv.flights));
+      setTxt('kpiFares', fmt(inv.fares));
+      setTxt('kpiTools', ag.tools.length);
+      setTxt('kpiPnrs', fmt(inv.pnrs));
+      setTxt('kpiProvider', `${ag.provider} · ${ag.model}`);
+
+      const sys = document.getElementById('sysStatus');
+      if (sys) sys.innerHTML =
+        row(t('cpProvider'), ag.provider) +
+        row(t('cpModel'), `<code class="text-[11px]">${ag.model}</code>`) +
+        row(t('cpToolCount'), ag.tools.length) +
+        row('THY MCP', mcp.authenticated ? `<span class="text-emerald-600">● ${t('cpConnected')}</span>` : `<span class="text-amber-600">○ ${t('cpNoAuth')}</span>`) +
+        row(t('cpAirportFlight'), `${inv.airports} / ${fmt(inv.flights)}`) +
+        row(t('cpSeatsAvail'), fmt(inv.seats)) +
+        row(t('cpTicketsSold'), `${fmt(inv.tickets)} <span class="text-slate-400 font-medium">(${inv.pnrs} PNR)</span>`) +
+        row(t('cpPriceRange'), `$${inv.min_fare} – $${inv.max_fare}`);
+
+      const rules = document.getElementById('priceRules');
+      if (rules) rules.innerHTML =
+        row(t('cpAdult'), '%100') +
+        row(t('cpChild'), `%${pr.child_ratio*100}`) +
+        row(t('cpInfant'), `%${pr.infant_ratio*100}`) +
+        row(t('cpTax'), `$${pr.tax_per_pax} <span class="text-slate-400 font-medium">· ${t('cpTaxNote')}</span>`) +
+        row(t('cpRtFactor'), `×${pr.round_trip_factor}`) +
+        row(t('cpDemand')+' (≤2)', `×${pr.demand_multipliers['<=2g']}`, 'text-amber-600') +
+        row(t('cpDemand')+' (≤7)', `×${pr.demand_multipliers['<=7g']}`) +
+        row(t('cpDemand')+' (>14)', `×${pr.demand_multipliers['>14g']}`);
+
+      const ragBadge = document.getElementById('ragBadge');
+      if (ragBadge && d.rag) {
+        const ok = (d.rag.indexed || 0) > 0;
+        ragBadge.textContent = ok ? `RAG · ${d.rag.indexed} ${t('cpDocs')}` : 'RAG · —';
+        ragBadge.className = 'text-[10px] font-black px-2 py-0.5 rounded-full ' +
+          (ok ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-500');
+        ragBadge.title = ok ? `${d.rag.store} · ${d.rag.sources} ${t('cpSourceDocs')}` : '';
+      }
+
+      const sum = document.getElementById('logSummary');
+      if (sum) sum.textContent = ob.total_calls
+        ? `${ob.total_calls} ${t('cpCalls')} · ${ob.success} ${t('cpSuccess')} · ${t('cpAvg')} ${ob.avg_ms} ms` : '—';
+
+      const log = document.getElementById('toolLog');
+      if (log){
+        if (!ob.recent.length){
+          log.innerHTML = '<div class="text-slate-400 py-3 text-center">Henüz tool çağrısı yok. Wingo\'ya bir soru sorun.</div>';
+        } else {
+          log.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-left">
+            <thead><tr class="text-[10px] font-black text-slate-400 tracking-wider">
+              <th class="pb-2">${t('cpTime')}</th><th class="pb-2">${t('cpTool')}</th><th class="pb-2">${t('cpStatus')}</th><th class="pb-2">${t('cpDur')}</th><th class="pb-2">${t('cpInput')}</th>
+            </tr></thead><tbody>` +
+            ob.recent.map(c => `<tr class="border-t border-slate-100">
+              <td class="py-2 text-slate-400 font-mono text-[11px]">${c.ts}</td>
+              <td class="py-2 font-bold">${TOOL_TR[c.tool]||c.tool}</td>
+              <td class="py-2">${c.ok
+                ? '<span class="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">'+t('cpOk')+'</span>'
+                : '<span class="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full">'+t('cpFail')+'</span>'}</td>
+              <td class="py-2 font-mono text-[11px] ${c.ms>2000?'text-amber-600 font-bold':'text-slate-500'}">${c.ms} ms</td>
+              <td class="py-2 text-slate-400 font-mono text-[10px] truncate max-w-[220px]">${JSON.stringify(c.input)}</td>
+            </tr>`).join('') + '</tbody></table></div>';
+        }
+      }
+    }
+    // ===== VOICE INPUT (Speech-to-Text) =====
+    (function initSpeech(){
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const micBtn = document.getElementById('micBtn');
+      const status = document.getElementById('micStatus');
+      const statusText = document.getElementById('micStatusText');
+      const preview = document.getElementById('micPreview');
+      if (!micBtn) return;
+      const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
+      if (!SR && !canRecord) { micBtn.remove(); return; }   // hicbir yol yoksa butonu gosterme
+
+      micBtn.classList.remove('hidden');
+      micBtn.classList.add('inline-flex');
+
+      const T = {
+        tr: { listening:'Dinliyorum…',
+              denied:'Mikrofon izni yok → adres çubuğundaki 🔒 ikonu · Mikrofon: İzin ver. Sonra: Sistem Ayarları › Gizlilik › Mikrofon › tarayıcı açık olmalı.',
+              nospeech:'Ses algılanmadı, tekrar deneyin', error:'Ses tanıma hatası',
+              insecure:'Sesli giriş yalnızca localhost veya https üzerinde çalışır',
+              title:'Sesli mesaj (konuşarak yaz)' },
+        en: { listening:'Listening…',
+              denied:'No mic permission → click 🔒 in the address bar · Microphone: Allow. Then: System Settings › Privacy › Microphone › enable your browser.',
+              nospeech:'No speech detected, try again', error:'Speech recognition error',
+              insecure:'Voice input requires localhost or https',
+              title:'Voice message (speak to type)' }
+      };
+      const tt = () => T[lang] || T.tr;
+
+      let rec = null, listening = false, finalText = '';
+
+      function setListening(on){
+        listening = on;
+        micBtn.classList.toggle('listening', on);
+        status.classList.toggle('on', on);
+        // Set colours inline with !important to override Tailwind CDN utilities
+        if (on) {
+          const accent = getComputedStyle(document.documentElement)
+            .getPropertyValue('--accent-dark').trim() || '#C90019';
+          micBtn.style.setProperty('background-color', accent, 'important');
+          micBtn.style.setProperty('color', '#ffffff', 'important');
+        } else {
+          micBtn.style.removeProperty('background-color');
+          micBtn.style.removeProperty('color');
+        }
+        micBtn.querySelector('use').setAttribute('href', on ? '#i-mic-off' : '#i-mic');
+        micBtn.title = on ? tt().listening : tt().title;
+        if (!on) preview.textContent = '';
+      }
+
+      function flash(msg, ms){
+        statusText.textContent = msg;
+        statusText.style.whiteSpace = 'normal';
+        preview.textContent = '';
+        status.classList.add('on');
+        clearTimeout(flash._t);
+        flash._t = setTimeout(() => {
+          if (!listening) status.classList.remove('on');
+          statusText.textContent = tt().listening;
+        }, ms || 2600);
+      }
+
+      // Fix brand/code names. The Turkish speech model often mangles English brand
+      // sik yanlis yaziyor ("ExtraFly" -> "Ekstra play"). Olculen gercek varyantlar:
+      //   ExtraFly  -> ekstra play / extra flight / exterfly / ekstra fly / ekstra sıla
+      //   PrimeFly  -> sılai / prime flight / prayim flay
+      //   EcoFly    -> john flai / eko fly / ego fly
+      const FLY = '(?:fl(?:y|i|ay|ai|ight|üy)|play|pilav|sıla|sila)';
+      function fixTerms(s){
+        if (!s) return s;
+        return s
+          // ExtraFly ve yakin varyantlari
+          .replace(new RegExp('\\\\b(?:e|i)?[kx]s?tra?[\\\\s-]*' + FLY + '\\\\b', 'gi'), 'ExtraFly')
+          .replace(/\bex(?:ter|tir|tra)[\s-]*fl(?:y|i|ay|ai)\b/gi, 'ExtraFly')
+          .replace(/\bekstra[\s-]*(?:play|sıla|sila|pilav)\b/gi, 'ExtraFly')
+          // PrimeFly
+          .replace(new RegExp('\\\\bpr?a?[iy]?m[ei]?[\\\\s-]*' + FLY + '\\\\b', 'gi'), 'PrimeFly')
+          .replace(/\bsılai\b|\bsilai\b/gi, 'PrimeFly')
+          // EcoFly
+          .replace(new RegExp('\\\\b(?:e[kcgğ]o|eko|ego|john)[\\\\s-]*' + FLY + '\\\\b', 'gi'), 'EcoFly')
+          // FlexFly
+          .replace(new RegExp('\\\\bfle[kx]s?[\\\\s-]*' + FLY + '\\\\b', 'gi'), 'FlexFly')
+          // Business paketleri
+          .replace(new RegExp('\\\\bbusiness[\\\\s-]*' + FLY + '\\\\b', 'gi'), 'BusinessFly')
+          .replace(/\bbusiness[\s-]*pra?[iy]?me?\b/gi, 'BusinessPrime')
+          // Kodlar
+          .replace(/\bp\.?\s?n\.?\s?r\.?\b/gi, 'PNR')
+          .replace(/\bmayls?[\s&]*(?:and|end)?[\s&]*smayls?\b/gi, 'Miles&Smiles');
+      }
+
+      async function start(){
+        // Outside a secure context (http + IP) the browser always denies the microphone
+        if (!window.isSecureContext) { flash(tt().insecure, 6000); return; }
+        // Request permission explicitly so the browser prompt appears and errors are diagnosable
+        if (navigator.mediaDevices?.getUserMedia) {
+          try {
+            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+            s.getTracks().forEach(t => t.stop());   // izni aldik, akisi hemen kapat
+          } catch (err) {
+            flash(tt().denied, 9000);
+            return;
+          }
+        }
+        rec = new SR();
+        rec.lang = (lang === 'en') ? 'en-US' : 'tr-TR';
+        rec.interimResults = true;      // konusurken canli onizleme
+        rec.continuous = true;          // Susunca hizli kesilmesin diye surekli dinleme
+        rec.maxAlternatives = 1;
+        finalText = '';
+        statusText.textContent = tt().listening;
+
+        rec.onstart = () => setListening(true);
+        rec.onresult = (e) => {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const txt = e.results[i][0].transcript;
+            if (e.results[i].isFinal) finalText += txt; else interim += txt;
+          }
+          preview.textContent = fixTerms(interim);
+          if (finalText) {
+            // Append to any existing text instead of overwriting
+            const base = input.value.trim();
+            input.value = (base ? base + ' ' : '') + fixTerms(finalText).trim();
+            finalText = '';
+            input.focus();
+          }
+        };
+        rec.onerror = (e) => {
+          if (e.error === 'not-allowed' || e.error === 'service-not-allowed') flash(tt().denied, 9000);
+          else if (e.error === 'no-speech') flash(tt().nospeech);
+          else if (e.error !== 'aborted') flash(tt().error + ': ' + e.error, 4000);
+        };
+        rec.onend = () => { setListening(false); rec = null; };
+
+        try { rec.start(); } catch(_) { setListening(false); }
+      }
+
+      function stop(){ if (rec) { try { rec.stop(); } catch(_){} } setListening(false); }
+
+      micBtn.addEventListener('click', () => {
+        listening ? stop() : start();
+      });
+      // Stop listening when the panel is closed
+      document.getElementById('chatClose')?.addEventListener('click', stop);
+      micBtn.title = tt().title;
+    })();
+
+
+    // ===== Popular routes (priced from the live inventory) =====
+    async function loadPopularRoutes(){
+      const box = document.getElementById('popularRoutes');
+      if (!box) return;
+      let data;
+      try { data = await (await fetch('/routes/popular')).json(); } catch(e){ return; }
+      const routes = data.routes || [];
+      if (!routes.length) { box.innerHTML = ''; return; }
+      box.innerHTML = routes.map(r => `
+        <button type="button" class="route-card group text-left rounded-2xl overflow-hidden ring-1 ring-slate-200/80 bg-white hover:ring-[var(--accent)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+                data-o="${r.origin}" data-d="${r.destination}" data-date="${r.first_date}">
+          <div class="px-4 pt-4 pb-3 flex items-start justify-between gap-2">
+            <div class="text-[11px] font-black tracking-wide bg-slate-100 text-slate-600 px-2 py-1 rounded-md">${r.origin} → ${r.destination}</div>
+            <div class="text-right leading-none">
+              <div class="text-[10px] text-slate-400 font-bold">${t('prFrom')}</div>
+              <div class="text-[19px] font-black acc-text">$${r.from_price}</div>
+            </div>
+          </div>
+          <div class="px-4 pb-4">
+            <div class="text-[13px] font-bold truncate">${r.origin_name.replace(' Airport','')} — ${r.dest_name.replace(' Airport','')}</div>
+            <div class="text-[11px] text-slate-400 font-medium mt-1 inline-flex items-center gap-1.5">
+              <svg class="ic" style="width:.85em;height:.85em"><use href="#i-clock"/></svg> ${r.first_date}
+            </div>
+          </div>
+          <div class="h-1 w-0 group-hover:w-full transition-all duration-300" style="background:var(--accent)"></div>
+        </button>`).join('');
+
+      // Clicking a card fills the search form and submits it
+      box.querySelectorAll('.route-card').forEach(c => c.onclick = () => {
+        const f = document.querySelector('form[action="/search"]');
+        if (!f) return;
+        f.querySelector('[name=origin]').value = c.dataset.o;
+        f.querySelector('[name=destination]').value = c.dataset.d;
+        f.querySelector('[name=date]').value = c.dataset.date;
+        f.submit();
+      });
+    }
+    loadPopularRoutes();
+
+    // ===== Case solution: live verification + question cards =====
+    async function loadCaseSolution(){
+      let d; try { d = await (await fetch('/case/solution')).json(); } catch(e){ return; }
+      const v = d.verified;
+
+      const card = (label, cls, base, claimed, engine, match) => `
+        <div class="rounded-xl ring-1 ${match?'ring-emerald-200 bg-emerald-50/40':'ring-rose-200 bg-rose-50/40'} p-3.5">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[11px] font-black text-slate-500 tracking-wide">${label}</span>
+            <span class="text-[9px] font-black px-2 py-0.5 rounded-full ${match?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-700'}">
+              ${match?t('cpVerified'):t('cpMismatch')}
+            </span>
+          </div>
+          <div class="text-[22px] font-black leading-none">$${engine.toLocaleString('tr-TR')}</div>
+          <div class="text-[11px] text-slate-400 font-medium mt-1">${cls} ${t('cpClass')} $${base} · PDF: $${claimed.toLocaleString('tr-TR')}</div>
+        </div>`;
+
+      document.getElementById('caseVerify').innerHTML =
+        card(t('cpOptA'), v.option_a.class, v.option_a.base, v.option_a.claimed, v.option_a.engine, v.option_a.match) +
+        card(t('cpOptB'), v.option_b.class, v.option_b.base, v.option_b.claimed, v.option_b.engine, v.option_b.match) +
+        `<div class="rounded-xl ring-1 ring-slate-200 p-3.5 flex flex-col justify-center">
+           <div class="text-[11px] font-black text-slate-500 tracking-wide mb-1.5">${t('cpSaving')}</div>
+           <div class="text-[22px] font-black leading-none acc-text">$${v.saving.toLocaleString('tr-TR')}</div>
+           <div class="text-[11px] text-slate-400 font-medium mt-1">${t('cpSavingSub')}</div>
+         </div>`;
+
+      document.getElementById('caseAnswers').innerHTML = d.answers.map((a,i) => `
+        <details class="group rounded-xl ring-1 ring-slate-200 overflow-hidden" ${i===0?'open':''}>
+          <summary class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition list-none">
+            <span class="w-7 h-7 rounded-lg acc-50 acc-text text-[11px] font-black flex items-center justify-center shrink-0">${a.q}</span>
+            <span class="font-bold text-[13px] shrink-0">${a.title}</span>
+            <span class="text-[12px] text-slate-400 font-medium truncate flex-1">${a.verdict}</span>
+            <span class="text-slate-300 text-[11px] group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div class="px-4 pb-4 pt-1 border-t border-slate-100">
+            <p class="text-[12px] text-slate-500 leading-relaxed font-medium mb-3">${a.detail}</p>
+            <div class="grid sm:grid-cols-2 gap-x-6 gap-y-1">
+              ${a.metrics.map(m => `<div class="flex justify-between text-[12px] py-1 border-b border-slate-50">
+                <span class="text-slate-400 font-medium">${m[0]}</span><span class="font-bold">${m[1]}</span></div>`).join('')}
+            </div>
+          </div>
+        </details>`).join('');
+    }
+    loadCaseSolution();
+
+    // ===== Airport Autocomplete Dropdown & Quick Search Handler =====
+    const ALL_AIRPORTS = {{ airports | tojson }};
+
+    function openPopup(panel, trigger) {
+      if (!panel) return;
+      panel.classList.add('is-open');
+      if (trigger) trigger.setAttribute('aria-expanded', 'true');
+    }
+
+    function closePopup(panel, trigger) {
+      if (!panel) return;
+      panel.classList.remove('is-open');
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function setupAutocomplete(inputId, hiddenId, dropdownId) {
+      const input = document.getElementById(inputId);
+      const hidden = document.getElementById(hiddenId);
+      const dropdown = document.getElementById(dropdownId);
+      if (!input || !hidden || !dropdown) return;
+
+      const currentCode = hidden.value;
+      const found = ALL_AIRPORTS.find(a => a.code === currentCode);
+      if (found) input.value = `${found.code} — ${found.name}`;
+
+      input.addEventListener('focus', () => { input.select(); renderDropdown('', dropdown, input, hidden); });
+      input.addEventListener('input', (e) => renderDropdown(e.target.value, dropdown, input, hidden));
+
+      // Keyboard navigation: Up/Down to move, Enter to pick, Escape to close
+      input.addEventListener('keydown', (e) => {
+        const items = [...dropdown.querySelectorAll('[data-ac-item]')];
+        if (!items.length || !dropdown.classList.contains('is-open')) {
+          if (e.key === 'ArrowDown') renderDropdown(input.value, dropdown, input, hidden);
+          return;
+        }
+        let idx = items.findIndex(el => el.dataset.active === '1');
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          idx = e.key === 'ArrowDown'
+            ? (idx + 1) % items.length
+            : (idx <= 0 ? items.length - 1 : idx - 1);
+          items.forEach(el => { el.dataset.active = '0'; el.classList.remove('ac-active'); });
+          items[idx].dataset.active = '1';
+          items[idx].classList.add('ac-active');
+          items[idx].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+          if (idx >= 0) { e.preventDefault(); items[idx].click(); }
+        } else if (e.key === 'Escape') {
+          closePopup(dropdown);
+          input.blur();
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+          closePopup(dropdown);
+        }
+      });
+    }
+
+    function renderDropdown(query, dropdown, input, hidden) {
+      const q = (query || '').toLowerCase().trim();
+      const filtered = ALL_AIRPORTS.filter(a =>
+        a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+      );
+
+      if (filtered.length === 0) {
+        dropdown.innerHTML = `<div class="p-3 text-xs text-slate-400 text-center font-medium">Havalimanı bulunamadı</div>`;
+        openPopup(dropdown);
+        return;
+      }
+
+      dropdown.innerHTML = `<div class="airport-list">${filtered.map(a => `
+        <div data-ac-item data-active="0" onclick="selectAirport('${a.code}', '${a.name.replace(/'/g, "\\'")}', '${input.id}', '${hidden.id}', '${dropdown.id}')" class="airport-row px-3.5 py-2.5 cursor-pointer flex items-center justify-between transition group">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="px-2 py-0.5 bg-slate-100 rounded text-xs font-bold text-slate-700 transition-colors">${a.code}</span>
+            <span class="text-xs font-semibold text-slate-800 truncate">${a.name}</span>
+          </div>
+          <span class="text-[10px] font-bold text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-4">Seç ➔</span>
+        </div>
+      `).join('')}</div>`;
+      openPopup(dropdown);
+    }
+
+    function selectAirport(code, name, inputId, hiddenId, dropdownId) {
+      document.getElementById(inputId).value = `${code} — ${name}`;
+      document.getElementById(hiddenId).value = code;
+      closePopup(document.getElementById(dropdownId));
+    }
+
+    function swapAirports() {
+      const oInput = document.getElementById('originInput');
+      const oHidden = document.getElementById('originValue');
+      const dInput = document.getElementById('destInput');
+      const dHidden = document.getElementById('destValue');
+      if (!oInput || !dInput) return;
+
+      const tempV = oInput.value;
+      const tempH = oHidden.value;
+
+      oInput.value = dInput.value;
+      oHidden.value = dHidden.value;
+
+      dInput.value = tempV;
+      dHidden.value = tempH;
+    }
+
+    function quickSearch(origin, dest, dateStr) {
+      const foundO = ALL_AIRPORTS.find(a => a.code === origin);
+      const foundD = ALL_AIRPORTS.find(a => a.code === dest);
+      if (foundO) {
+        document.getElementById('originInput').value = `${foundO.code} — ${foundO.name}`;
+        document.getElementById('originValue').value = origin;
+      }
+      if (foundD) {
+        document.getElementById('destInput').value = `${foundD.code} — ${foundD.name}`;
+        document.getElementById('destValue').value = dest;
+      }
+      if (dateStr) setSelectedDate('depart', parseIsoDate(dateStr));
+      const form = document.querySelector('form[action="/search"]');
+      if (form) form.submit();
+    }
+
+    const MONTHS = {
+      tr: ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'],
+      en: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+    };
+    const WEEKDAYS = {
+      tr: ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'],
+      en: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+    };
+    let calendarCursor = new Date();
+    let pickingReturn = false;
+    let calendarHoverDate = null;
+
+    function parseIsoDate(value) {
+      if (!value) return null;
+      const [y, m, d] = value.split('-').map(Number);
+      if (!y || !m || !d) return null;
+      return new Date(y, m - 1, d);
+    }
+    function isoDate(date) {
+      if (!date) return '';
+      return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    }
+    function sameDay(a, b) {
+      return !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    }
+    function compareDay(a, b) {
+      return new Date(a.getFullYear(), a.getMonth(), a.getDate()) - new Date(b.getFullYear(), b.getMonth(), b.getDate());
+    }
+    function betweenDays(date, a, b) {
+      if (!date || !a || !b) return false;
+      const start = compareDay(a, b) <= 0 ? a : b;
+      const end = start === a ? b : a;
+      return compareDay(date, start) >= 0 && compareDay(date, end) <= 0;
+    }
+    function addDays(date, days) {
+      const d = new Date(date);
+      d.setDate(d.getDate() + days);
+      return d;
+    }
+    function setSelectedDate(kind, date) {
+      const target = document.getElementById(kind === 'return' ? 'returnDate' : 'departDate');
+      if (target) target.value = isoDate(date);
+      updateDatePreview();
+      renderCalendar();
+    }
+    function updateDatePreview() {
+      const depart = parseIsoDate(document.getElementById('departDate')?.value);
+      const ret = parseIsoDate(document.getElementById('returnDate')?.value);
+      const setPreview = (prefix, date) => {
+        document.getElementById(`${prefix}DayPreview`).textContent = date ? String(date.getDate()).padStart(2, '0') : '';
+        document.getElementById(`${prefix}MonthPreview`).textContent = date ? MONTHS[lang][date.getMonth()] : '';
+      };
+      setPreview('depart', depart);
+      setPreview('return', ret);
+      const isRoundTrip = document.getElementById('tripTypeInput')?.value === 'round_trip';
+      document.getElementById('datePickerButton')?.classList.toggle('is-one-way', !isRoundTrip);
+      document.getElementById('returnPreviewSegment')?.classList.toggle('opacity-40', !isRoundTrip);
+      document.getElementById('datePickerHint').textContent = isRoundTrip
+        ? (pickingReturn ? (lang === 'en' ? 'Choose return date' : 'Dönüş tarihini seçin') : (lang === 'en' ? 'Choose departure date' : 'Gidiş tarihini seçin'))
+        : (lang === 'en' ? 'Choose departure date' : 'Gidiş tarihini seçin');
+    }
+    function renderCalendar() {
+      const grid = document.getElementById('calendarGrid');
+      const title = document.getElementById('calendarTitle');
+      if (!grid || !title) return;
+      const year = calendarCursor.getFullYear();
+      const month = calendarCursor.getMonth();
+      title.textContent = `${MONTHS[lang][month]} ${year}`;
+      const first = new Date(year, month, 1);
+      const startOffset = (first.getDay() + 6) % 7;
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const depart = parseIsoDate(document.getElementById('departDate')?.value);
+      const ret = parseIsoDate(document.getElementById('returnDate')?.value);
+      const isRoundTrip = document.getElementById('tripTypeInput')?.value === 'round_trip';
+      const previewEnd = isRoundTrip && pickingReturn && calendarHoverDate ? calendarHoverDate : ret;
+      let html = WEEKDAYS[lang].map(d => `<div class="text-[11px] text-slate-400 font-bold py-1">${d}</div>`).join('');
+      for (let i = 0; i < startOffset; i++) html += '<div></div>';
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        const selected = sameDay(date, depart) || sameDay(date, ret);
+        const inRange = isRoundTrip && depart && previewEnd && betweenDays(date, depart, previewEnd);
+        const preview = isRoundTrip && pickingReturn && calendarHoverDate && sameDay(date, calendarHoverDate);
+        const classes = [
+          'calendar-day rounded-lg text-sm font-bold',
+          selected ? 'is-selected' : 'text-slate-700',
+          inRange && !selected ? 'is-in-range' : '',
+          preview && !selected ? 'is-preview' : '',
+        ].join(' ');
+        html += `<button type="button" class="${classes}" data-cal-day="${isoDate(date)}">${day}</button>`;
+      }
+      grid.innerHTML = html;
+      grid.onmouseover = (e) => {
+        const btn = e.target.closest?.('[data-cal-day]');
+        if (!btn) return;
+        if (document.getElementById('tripTypeInput')?.value === 'round_trip' && parseIsoDate(document.getElementById('departDate')?.value)) {
+          const nextHover = parseIsoDate(btn.dataset.calDay);
+          if (!sameDay(calendarHoverDate, nextHover)) {
+            calendarHoverDate = nextHover;
+            renderCalendar();
+          }
+        }
+      };
+      grid.onmouseleave = () => {
+        if (calendarHoverDate) {
+          calendarHoverDate = null;
+          renderCalendar();
+        }
+      };
+      grid.querySelectorAll('[data-cal-day]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const picked = parseIsoDate(btn.dataset.calDay);
+          const tripType = document.getElementById('tripTypeInput')?.value || 'one_way';
+          if (tripType === 'round_trip' && pickingReturn) {
+            setSelectedDate('return', picked);
+            pickingReturn = false;
+            calendarHoverDate = null;
+            closePopup(document.getElementById('datePickerPopup'), document.getElementById('datePickerButton'));
+          } else {
+            setSelectedDate('depart', picked);
+            if (tripType === 'round_trip') {
+              pickingReturn = true;
+              document.getElementById('returnDate').value = '';
+              calendarHoverDate = null;
+              updateDatePreview();
+              renderCalendar();
+            } else {
+              closePopup(document.getElementById('datePickerPopup'), document.getElementById('datePickerButton'));
+            }
+          }
+          updateDatePreview();
+        });
+      });
+      updateDatePreview();
+    }
+    function setTripType(value) {
+      const input = document.getElementById('tripTypeInput');
+      if (input) input.value = value;
+      document.querySelectorAll('[data-trip-option]').forEach(btn => {
+        btn.setAttribute('aria-checked', btn.dataset.tripOption === value ? 'true' : 'false');
+      });
+      if (value === 'round_trip') {
+        pickingReturn = !!parseIsoDate(document.getElementById('departDate')?.value) && !parseIsoDate(document.getElementById('returnDate')?.value);
+      } else {
+        document.getElementById('returnDate').value = '';
+        pickingReturn = false;
+        calendarHoverDate = null;
+      }
+      updateDatePreview();
+      renderCalendar();
+    }
+    document.querySelectorAll('[data-trip-option]').forEach(btn => {
+      btn.addEventListener('click', () => setTripType(btn.dataset.tripOption));
+    });
+    document.getElementById('datePickerButton')?.addEventListener('click', () => {
+      const popup = document.getElementById('datePickerPopup');
+      const trigger = document.getElementById('datePickerButton');
+      popup.classList.contains('is-open') ? closePopup(popup, trigger) : openPopup(popup, trigger);
+      renderCalendar();
+    });
+    document.getElementById('calPrev')?.addEventListener('click', () => {
+      calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+      renderCalendar();
+    });
+    document.getElementById('calNext')?.addEventListener('click', () => {
+      calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+      renderCalendar();
+    });
+    document.addEventListener('click', (e) => {
+      const popup = document.getElementById('datePickerPopup');
+      const trigger = document.getElementById('datePickerButton');
+      const path = e.composedPath ? e.composedPath() : [];
+      if (popup && trigger && !path.includes(popup) && !path.includes(trigger)) closePopup(popup, trigger);
+    });
+
+    function updatePax() {
+      const vals = {
+        adults: Math.max(1, Number(document.getElementById('adultsInput')?.value || 1)),
+        children: Math.max(0, Number(document.getElementById('childrenInput')?.value || 0)),
+        babies: Math.max(0, Number(document.getElementById('babiesInput')?.value || 0)),
+      };
+      Object.entries(vals).forEach(([key, value]) => {
+        document.getElementById(`${key}Input`).value = value;
+        document.getElementById(`${key}Count`).textContent = value;
+      });
+      const total = vals.adults + vals.children + vals.babies;
+      document.getElementById('paxButtonText').textContent = `${total} ${total === 1 ? t('paxSingular') : t('paxPlural')}`;
+    }
+    document.getElementById('paxButton')?.addEventListener('click', () => {
+      const popup = document.getElementById('paxPopup');
+      const trigger = document.getElementById('paxButton');
+      popup.classList.contains('is-open') ? closePopup(popup, trigger) : openPopup(popup, trigger);
+    });
+    document.querySelectorAll('[data-pax-row]').forEach(row => {
+      row.querySelector('.pax-minus')?.addEventListener('click', () => {
+        const key = row.dataset.paxRow;
+        const input = document.getElementById(`${key}Input`);
+        const min = key === 'adults' ? 1 : 0;
+        input.value = Math.max(min, Number(input.value || min) - 1);
+        updatePax();
+      });
+      row.querySelector('.pax-plus')?.addEventListener('click', () => {
+        const key = row.dataset.paxRow;
+        const input = document.getElementById(`${key}Input`);
+        input.value = Number(input.value || 0) + 1;
+        updatePax();
+      });
+    });
+    document.addEventListener('click', (e) => {
+      const popup = document.getElementById('paxPopup');
+      const trigger = document.getElementById('paxButton');
+      if (popup && trigger && !popup.contains(e.target) && !trigger.contains(e.target)) closePopup(popup, trigger);
+    });
+    setTripType(document.getElementById('tripTypeInput')?.value || 'one_way');
+    updatePax();
+    window.formPickersReady = true;
+
+    // Search form: show a loading state so the click clearly registers
+    (function initSearchLoading(){
+      const form = document.querySelector('form[action="/search"]');
+      if (!form) return;
+      form.addEventListener('submit', () => {
+        const btn = form.querySelector('button[type=submit], button:not([type])');
+        if (!btn || btn.dataset.loading === '1') return;
+        btn.dataset.loading = '1';
+        btn.disabled = true;
+        btn.style.opacity = '0.75';
+        btn.style.cursor = 'wait';
+        btn.innerHTML = `<span class="inline-flex items-center gap-2">
+            <span class="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+            ${t('searching')}
+          </span>`;
+      });
+    })();
+
+    setupAutocomplete('originInput', 'originValue', 'originDropdown');
+    setupAutocomplete('destInput', 'destValue', 'destDropdown');
+
+    document.getElementById('refreshStats')?.addEventListener('click', loadStats);
+    document.getElementById('runScenario')?.addEventListener('click', () => {
+      const d = new Date(); d.setDate(d.getDate()+14);
+      const iso = d.toISOString().slice(0,10);
+      openChat(false);
+      send(`${iso} tarihinde IST'ten Londra'ya (LHR) 2 yetişkin, 1 çocuk ve 1 bebek için gidiş-dönüş, sadece değiştirilebilir bilet arayıp aile toplam maliyetini vergilerle birlikte hesapla. Riskli (az koltuklu) fareleri de belirt.`);
+    });
+    loadStats();
+  </script>
+</body>
+</html>

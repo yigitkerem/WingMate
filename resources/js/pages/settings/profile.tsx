@@ -26,7 +26,7 @@ export default function Profile() {
                 <Heading
                     variant="small"
                     title="Profile"
-                    description="Update your name and email address"
+                    description="Update your travel profile"
                 />
 
                 <Form
@@ -74,6 +74,28 @@ export default function Profile() {
                                 <InputError
                                     className="mt-2"
                                     message={errors.email}
+                                />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="passport_number">
+                                    Passport number
+                                </Label>
+
+                                <Input
+                                    id="passport_number"
+                                    className="mt-1 block w-full"
+                                    defaultValue={
+                                        auth.user.passport_number ?? ''
+                                    }
+                                    name="passport_number"
+                                    autoComplete="off"
+                                    placeholder="Passport number"
+                                />
+
+                                <InputError
+                                    className="mt-2"
+                                    message={errors.passport_number}
                                 />
                             </div>
 
