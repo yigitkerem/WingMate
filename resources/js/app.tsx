@@ -1,7 +1,7 @@
 import { createInertiaApp } from '@inertiajs/react';
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { WingoChat } from '@/components/public-flight/wingo-chat';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -32,13 +32,13 @@ createInertiaApp({
             case name === 'welcome':
             case name === 'flight-search':
             case name === 'flight-results':
-                return null;
+                return PageShell;
             case name.startsWith('auth/'):
-                return AuthLayout;
+                return [PageShell, AuthLayout];
             case name.startsWith('settings/'):
-                return [AppLayout, SettingsLayout];
+                return [PageShell, AppLayout, SettingsLayout];
             default:
-                return AppLayout;
+                return [PageShell, AppLayout];
         }
     },
     strictMode: true,
@@ -46,7 +46,6 @@ createInertiaApp({
         return (
             <TooltipProvider delayDuration={0}>
                 {app}
-                <GlobalWingoChat />
                 <Toaster />
             </TooltipProvider>
         );
@@ -58,6 +57,15 @@ createInertiaApp({
 
 // This will set light / dark mode on load...
 initializeTheme();
+
+function PageShell({ children }: { children: ReactNode }) {
+    return (
+        <>
+            {children}
+            <GlobalWingoChat />
+        </>
+    );
+}
 
 function GlobalWingoChat() {
     const [isOpen, setIsOpen] = useState(false);

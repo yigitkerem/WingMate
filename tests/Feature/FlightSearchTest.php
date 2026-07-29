@@ -1,7 +1,9 @@
 <?php
 
+use App\Actions\SearchFlights;
 use App\Models\Airport;
 use App\Models\Offer;
+use App\Models\PricingRule;
 use App\Models\User;
 use Database\Seeders\AirlineDemoSeeder;
 use Illuminate\Support\Carbon;
@@ -150,6 +152,39 @@ test('seeded premium fares expose rich flexibility rules', function () {
     } finally {
         Carbon::setTestNow();
     }
+});
+
+test('demo seeder creates a richer rule catalogue with service incentives', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        $origin = Airport::query()->where('iata_code', 'IST')->firstOrFail();
+        $destination = Airport::query()->where('iata_code', 'LHR')->firstOrFail();
+
+        $flights = app(SearchFlights::class)->execute(
+            originAirportId: $origin->id,
+            destinationAirportId: $destination->id,
+            date: '2026-07-29',
+            mode: 'basic',
+            seatPassengers: 2,
+            tripType: 'one_way',
+            adults: 1,
+            children: 1,
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    $services = collect($flights[0]['fares'][0]['services']);
+    $familySeat = $services->firstWhere('code', 'SEAT_STANDARD');
+
+    expect(PricingRule::query()->count())->toBeGreaterThanOrEqual(17)
+        ->and(PricingRule::query()->where('name', 'Family standard seats')->exists())->toBeTrue()
+        ->and(PricingRule::query()->where('name', 'Business Wi-Fi upgrade')->exists())->toBeTrue()
+        ->and($familySeat['source'])->toBe('rule')
+        ->and($familySeat['value']['seat_type'])->toBe('standard');
 });
 
 test('origin and destination must be different', function () {

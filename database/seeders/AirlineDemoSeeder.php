@@ -264,11 +264,23 @@ class AirlineDemoSeeder extends Seeder
     private function seedRules(): void
     {
         collect([
-            ['Weekend uplift', 'weekend', 20, true, "contains('fri,sat,sun', departure_day)", [['type' => 'percentage_surcharge', 'value' => 12, 'label' => 'Weekend demand']]],
+            ['Weekend uplift', 'weekend', 20, true, "departure_day == 'fri' || departure_day == 'sat' || departure_day == 'sun'", [['type' => 'percentage_surcharge', 'value' => 12, 'label' => 'Weekend demand']]],
+            ['Close-in booking uplift', 'close_in', 22, true, 'days_to_departure <= 2', [['type' => 'percentage_surcharge', 'value' => 7, 'label' => 'Close-in booking demand']]],
+            ['Low inventory protection', 'inventory_protection', 24, true, 'available_inventory <= 8', [['type' => 'percentage_surcharge', 'value' => 9, 'label' => 'Low inventory protection']]],
+            ['Advance purchase saver', 'advance_purchase', 26, true, 'days_to_departure >= 21', [['type' => 'percentage_discount', 'value' => 6, 'label' => 'Advance purchase saving']]],
             ['Elite extra fast track', 'loyalty_service', 30, true, "loyalty_tier == 'elite' || loyalty_tier == 'elite_plus'", [['type' => 'include_service', 'service_code' => 'FAST_TRACK', 'label' => 'Elite fast track']]],
+            ['Elite lounge invitation', 'loyalty_lounge', 32, true, "loyalty_tier == 'elite_plus'", [['type' => 'include_service', 'service_code' => 'LOUNGE', 'label' => 'Elite Plus lounge invitation']]],
+            ['Family standard seats', 'family_seating', 34, true, 'children > 0', [['type' => 'include_service', 'service_code' => 'SEAT_STANDARD', 'value' => ['seat_type' => 'standard'], 'label' => 'Family standard seats']]],
+            ['Infant priority check-in', 'infant_service', 36, true, 'infants > 0', [['type' => 'include_service', 'service_code' => 'PRIORITY_CHECKIN', 'label' => 'Infant priority check-in']]],
             ['Repeat route discount', 'history_discount', 40, true, 'route_count_12m >= 10', [['type' => 'percentage_discount', 'value' => 10, 'label' => 'Repeat route discount']]],
             ['Roundtrip saving', 'roundtrip_discount', 50, true, "trip_type == 'round_trip'", [['type' => 'percentage_discount', 'value' => 8, 'label' => 'Roundtrip saving']]],
+            ['Domestic shuttle saver', 'domestic_discount', 54, true, "route == 'SAW-ADB' || route == 'ADB-SAW'", [['type' => 'fixed_discount', 'value' => 12, 'label' => 'Domestic shuttle saving']]],
+            ['London advance saver', 'route_discount', 56, true, "route == 'IST-LHR' && days_to_departure >= 14", [['type' => 'fixed_discount', 'value' => 15, 'label' => 'London advance saving']]],
+            ['Dubai airport convenience', 'airport_service', 58, true, "destination == 'DXB'", [['type' => 'include_service', 'service_code' => 'FAST_TRACK', 'label' => 'Dubai fast track']]],
             ['IST-JFK market surcharge', 'route_surcharge', 60, true, "route == 'IST-JFK'", [['type' => 'percentage_surcharge', 'value' => 6, 'label' => 'Long-haul demand']]],
+            ['Long-haul Wi-Fi starter', 'longhaul_wifi', 62, true, "route == 'IST-JFK' || route == 'JFK-IST' || route == 'IST-SIN' || route == 'SIN-IST'", [['type' => 'include_service', 'service_code' => 'WIFI', 'value' => ['amount' => 250, 'data_mb' => 250], 'label' => 'Long-haul Wi-Fi starter']]],
+            ['Business Wi-Fi upgrade', 'business_wifi', 64, true, "cabin_code == 'BUSINESS'", [['type' => 'include_service', 'service_code' => 'WIFI_5GB', 'value' => ['amount' => 5120, 'data_mb' => 5120], 'label' => 'Business Wi-Fi upgrade']]],
+            ['BusinessPrime chauffeur fare', 'premium_fixed', 90, false, "bundle_code == 'BUSINESSPRIME' && route == 'IST-JFK' && days_to_departure >= 21", [['type' => 'fixed_fare', 'value' => 1599, 'label' => 'BusinessPrime long-haul fixed fare']]],
         ])->each(fn (array $rule): PricingRule => PricingRule::query()->create([
             'name' => $rule[0],
             'preset' => $rule[1],
