@@ -81,7 +81,10 @@ test('agent handles structured bundle requests without the external chat service
         Carbon::setTestNow();
     }
 
-    expect($response['reply'])->toContain('EcoFly')
+    expect($response['reply'])->toContain('Here are my top picks for you')
+        ->and($response['reply'])->toContain('Do these look good to you?')
+        ->and($response['reply'])->not->toContain('best custom bundle')
+        ->and($response['reply'])->not->toContain('Backup pick')
         ->and($response['reply'])->not->toContain('could not reach')
         ->and($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles');
 });
@@ -166,8 +169,71 @@ test('bundle recommendations create custom add on offers for unmet demand', func
     $pick = $bundle['recommended_picks'][0];
 
     expect($pick['customized'])->toBeTrue()
+        ->and($pick['class'])->toBe('Custom offer')
         ->and($pick['offer_ids'])->toHaveCount(1)
         ->and(collect($pick['services'])->firstWhere('code', 'LOUNGE')['source'])->toBe('customer');
+});
+
+test('bundle recommendations can apply exact refund and wifi service specs', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        $bundle = app(ChatbotToolbox::class)->dispatch('build_dynamic_bundles', [
+            'origin' => 'IST',
+            'destination' => 'LHR',
+            'date' => '2026-07-29',
+            'service_specs' => [
+                [
+                    'service_code' => 'REFUNDABLE',
+                    'value' => [
+                        'amount' => 240,
+                        'allowed' => true,
+                        'window_hours' => 240,
+                        'fee_type' => 'percent',
+                        'fee_amount' => 25,
+                    ],
+                ],
+                ['service_code' => 'WIFI_1GB', 'value' => ['amount' => 1024, 'data_mb' => 1024]],
+            ],
+        ], null, false)['result'];
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    $pick = $bundle['recommended_picks'][0];
+
+    expect($pick['customized'])->toBeTrue()
+        ->and($pick['package_code'])->toBe('ECOFLY')
+        ->and($pick['latest_refund_hours'])->toBe(240)
+        ->and($pick['refund_fee_percent'])->toBe(25)
+        ->and(collect($pick['services'])->firstWhere('code', 'REFUNDABLE')['source'])->toBe('customer')
+        ->and(collect($pick['services'])->firstWhere('code', 'WIFI_1GB')['value']['data_mb'])->toBe(1024);
+});
+
+test('agent parses direct rich custom bundle requests', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        config()->set('services.azure_openai.base_url', null);
+        config()->set('services.azure_openai.api_key', null);
+
+        $response = app(ChatbotAgent::class)->send(
+            'direct-rich-service-session',
+            'Build a custom bundle from IST to LHR on 2026-07-29 with 1GB Wi-Fi and refund with 25% fee up to 10 days before.',
+            'ours',
+            'en',
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    $pick = $response['tool_trace'][0]['result']['recommended_picks'][0];
+
+    expect($pick['latest_refund_hours'])->toBe(240)
+        ->and($pick['refund_fee_percent'])->toBe(25)
+        ->and(collect($pick['services'])->firstWhere('code', 'WIFI_1GB')['source'])->toBe('customer');
 });
 
 test('agent can build custom offers with excluded bags and included changes', function () {

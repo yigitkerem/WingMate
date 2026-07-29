@@ -8,6 +8,7 @@ use App\Models\FlightInventory;
 use App\Models\Offer;
 use App\Models\User;
 use App\Pricing\OfferBuilder;
+use App\Support\ServiceValue;
 use Illuminate\Support\Collection;
 
 class SearchFlights
@@ -121,8 +122,10 @@ class SearchFlights
 
             $value = $service['value'] ?? $default;
 
-            return is_array($value) ? ($value['amount'] ?? $default) : $value;
+            return ServiceValue::amount($value, $default);
         };
+        $changePolicy = $this->flexibilityPolicy($services, 'CHANGE_ALLOWED', 'CHANGE_FEE');
+        $refundPolicy = $this->flexibilityPolicy($services, 'REFUNDABLE', 'REFUND_FEE');
 
         return [
             'id' => $offer->id,
@@ -141,10 +144,14 @@ class SearchFlights
             'checked_baggage_kg' => (int) $serviceValue('CHECKED_BAG', 0),
             'cabin_baggage_kg' => (int) $serviceValue('CABIN_BAG', 0),
             'seat_selection_free' => (bool) $serviceValue('SEAT_SELECTION', false),
-            'change_fee_usd' => (int) $serviceValue('CHANGE_FEE', 0),
-            'refund_fee_usd' => (int) $serviceValue('REFUND_FEE', 0),
-            'latest_change_hours' => $serviceValue('CHANGE_ALLOWED') ? 24 : null,
-            'latest_refund_hours' => $serviceValue('REFUNDABLE') ? 24 : null,
+            'change_fee_usd' => $this->fixedFee($changePolicy),
+            'change_fee_percent' => $this->percentFee($changePolicy),
+            'refund_fee_usd' => $this->fixedFee($refundPolicy),
+            'refund_fee_percent' => $this->percentFee($refundPolicy),
+            'latest_change_hours' => $changePolicy['window_hours'] ?? null,
+            'latest_refund_hours' => $refundPolicy['window_hours'] ?? null,
+            'change_rule' => $changePolicy,
+            'refund_rule' => $refundPolicy,
             'count_available' => FlightInventory::query()
                 ->where('flight_id', $offer->flight_id)
                 ->where('booking_class_id', $offer->booking_class_id)
@@ -162,5 +169,60 @@ class SearchFlights
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $services
+     * @return array{allowed: bool, window_hours: int, fee_type: string, fee_amount: float}|null
+     */
+    private function flexibilityPolicy(Collection $services, string $ruleCode, string $feeCode): ?array
+    {
+        $ruleService = $services->firstWhere('code', $ruleCode);
+
+        if (! is_array($ruleService) || ! ServiceValue::isEnabled($ruleService['value'] ?? null)) {
+            return null;
+        }
+
+        $feeService = $services->firstWhere('code', $feeCode);
+        $feeValue = is_array($feeService) ? ($feeService['value'] ?? null) : null;
+        $value = $ruleService['value'] ?? true;
+        $windowHours = 24;
+        $feeType = is_array($feeValue) ? (string) ($feeValue['fee_type'] ?? 'fixed') : 'fixed';
+        $feeAmount = (float) ServiceValue::amount($feeValue, 0);
+
+        if (is_array($value)) {
+            $windowHours = (int) ($value['window_hours'] ?? ServiceValue::amount($value, 24));
+            $feeType = (string) ($value['fee_type'] ?? $feeType);
+            $feeAmount = (float) ($value['fee_amount'] ?? $feeAmount);
+        } elseif (is_numeric($value)) {
+            $windowHours = (int) $value;
+        }
+
+        return [
+            'allowed' => true,
+            'window_hours' => max(1, $windowHours),
+            'fee_type' => $feeType === 'percent' ? 'percent' : 'fixed',
+            'fee_amount' => $feeAmount,
+        ];
+    }
+
+    /**
+     * @param  array{fee_type: string, fee_amount: float}|null  $policy
+     */
+    private function fixedFee(?array $policy): ?int
+    {
+        if ($policy === null) {
+            return 0;
+        }
+
+        return $policy['fee_type'] === 'fixed' ? (int) $policy['fee_amount'] : null;
+    }
+
+    /**
+     * @param  array{fee_type: string, fee_amount: float}|null  $policy
+     */
+    private function percentFee(?array $policy): ?int
+    {
+        return $policy !== null && $policy['fee_type'] === 'percent' ? (int) $policy['fee_amount'] : null;
     }
 }

@@ -223,11 +223,16 @@ export function feeLabel(
 
 export function fareRuleLabel(
     rule: 'change' | 'refund',
-    feeUsd: number | undefined,
+    feeUsd: number | null | undefined,
     latestHours?: number | null,
+    feePercent?: number | null,
 ): string {
     if (latestHours === null || latestHours === undefined) {
         return rule === 'change' ? 'No change allowed' : 'No refund allowed';
+    }
+
+    if (feePercent !== null && feePercent !== undefined) {
+        return `${feePercent}% fee until ${latestHours}h`;
     }
 
     if ((feeUsd ?? 0) === 0) {

@@ -19,10 +19,14 @@ export type Fare = {
     checked_baggage_kg?: number;
     cabin_baggage_kg?: number;
     seat_selection_free?: boolean;
-    change_fee_usd?: number;
-    refund_fee_usd?: number;
+    change_fee_usd?: number | null;
+    change_fee_percent?: number | null;
+    refund_fee_usd?: number | null;
+    refund_fee_percent?: number | null;
     latest_refund_hours?: number | null;
     latest_change_hours?: number | null;
+    change_rule?: Record<string, unknown> | null;
+    refund_rule?: Record<string, unknown> | null;
     base_price_usd?: number;
     per_passenger_price_usd?: number;
     count_available?: number;

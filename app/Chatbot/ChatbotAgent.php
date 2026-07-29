@@ -2,6 +2,7 @@
 
 namespace App\Chatbot;
 
+use App\Support\ServiceValue;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -17,12 +18,20 @@ class ChatbotAgent
     private const array SERVICE_ALIASES = [
         'CHECKED_BAG' => ['CHECKED_BAG', 'CHECKED BAG', 'CHECKED BAGS', 'CHECKED BAGGAGE', 'BAGGAGE', 'BAG', 'BAGS'],
         'CABIN_BAG' => ['CABIN_BAG', 'CABIN BAG', 'CABIN BAGS', 'CABIN BAGGAGE', 'CARRY ON', 'CARRY-ON'],
+        'SEAT_EXIT_ROW' => ['SEAT_EXIT_ROW', 'EXIT ROW', 'EMERGENCY EXIT', 'EXTRA LEGROOM'],
+        'SEAT_STANDARD' => ['SEAT_STANDARD', 'STANDARD SEAT'],
         'SEAT_SELECTION' => ['SEAT_SELECTION', 'SEAT SELECTION', 'SEAT'],
         'CHANGE_ALLOWED' => ['CHANGE_ALLOWED', 'CHANGE RIGHT', 'CHANGE ALLOWED', 'CHANGE', 'CHANGES', 'CHANGEABLE'],
         'REFUNDABLE' => ['REFUNDABLE', 'REFUND RIGHT', 'REFUND', 'REFUNDS'],
         'LOUNGE' => ['LOUNGE', 'LOUNGE ACCESS'],
         'FAST_TRACK' => ['FAST_TRACK', 'FAST TRACK'],
-        'PRIORITY_BOARDING' => ['PRIORITY_BOARDING', 'PRIORITY BOARDING'],
+        'PRIORITY_BOARDING' => ['PRIORITY_BOARDING', 'PRIORITY BOARDING', 'BOARDING'],
+        'PRIORITY_CHECKIN' => ['PRIORITY_CHECKIN', 'PRIORITY CHECKIN', 'PRIORITY CHECK-IN', 'PRIORITY CHECK IN'],
+        'WIFI_UNLIMITED' => ['WIFI_UNLIMITED', 'UNLIMITED WIFI', 'UNLIMITED WI-FI'],
+        'WIFI_5GB' => ['WIFI_5GB', '5GB WIFI', '5 GB WIFI', 'WIFI 5GB', 'WI-FI 5GB'],
+        'WIFI_1GB' => ['WIFI_1GB', '1GB WIFI', '1 GB WIFI', 'WIFI 1GB', 'WI-FI 1GB'],
+        'WIFI' => ['WIFI', 'WI-FI', 'WI FI', 'INTERNET'],
+        'MEAL' => ['MEAL', 'SPECIAL MEAL', 'FOOD'],
     ];
 
     /**
@@ -151,7 +160,7 @@ class ChatbotAgent
     }
 
     /**
-     * @return array{origin: string, destination: string, date: string, trip_type?: string, return_date?: string, service_codes: array<int, string>, excluded_service_codes: array<int, string>}|null
+     * @return array{origin: string, destination: string, date: string, trip_type?: string, return_date?: string, service_codes: array<int, string>, excluded_service_codes: array<int, string>, service_specs: array<int, array<string, mixed>>}|null
      */
     private function parseBundleRequest(string $text): ?array
     {
@@ -164,13 +173,19 @@ class ChatbotAgent
         }
 
         $excludedServiceCodes = $this->parseExcludedServiceCodes($text);
+        $serviceSpecs = $this->parseServiceSpecs($text, $excludedServiceCodes);
+        $serviceSpecCodes = collect($serviceSpecs)
+            ->pluck('service_code')
+            ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
+            ->all();
 
         $request = [
             'origin' => Str::upper($matches[1]),
             'destination' => Str::upper($matches[2]),
             'date' => $matches[3],
-            'service_codes' => array_values(array_diff($this->parsePreferredServiceCodes($text), $excludedServiceCodes)),
+            'service_codes' => array_values(array_diff($this->parsePreferredServiceCodes($text), $excludedServiceCodes, $serviceSpecCodes)),
             'excluded_service_codes' => $excludedServiceCodes,
+            'service_specs' => $serviceSpecs,
         ];
 
         if (preg_match('/\breturn(?:ing)?\s+(?:on\s+)?(\d{4}-\d{2}-\d{2})\b/i', $text, $returnMatches) === 1
@@ -236,6 +251,143 @@ class ChatbotAgent
     }
 
     /**
+     * @param  array<int, string>  $excludedServiceCodes
+     * @return array<int, array{service_code: string, quantity?: int, value: mixed}>
+     */
+    private function parseServiceSpecs(string $text, array $excludedServiceCodes): array
+    {
+        $specs = [];
+
+        if (! in_array('CHECKED_BAG', $excludedServiceCodes, true)
+            && (preg_match('/\bchecked\s+(?:bag|baggage).*?\b(\d{1,2})\s*kg\b/i', $text, $matches) === 1
+                || preg_match('/\b(\d{1,2})\s*kg\s+checked\s+(?:bag|baggage)\b/i', $text, $matches) === 1)) {
+            $specs[] = ['service_code' => 'CHECKED_BAG', 'value' => ['amount' => (int) $matches[1]]];
+        }
+
+        if (! in_array('WIFI', $excludedServiceCodes, true)) {
+            $wifiSpec = $this->wifiServiceSpec($text);
+
+            if ($wifiSpec !== null) {
+                $specs[] = $wifiSpec;
+            }
+        }
+
+        $changeSpec = $this->flexibilityServiceSpec($text, 'CHANGE_ALLOWED', ['change', 'changes', 'changeable'], 55);
+
+        if ($changeSpec !== null && ! in_array('CHANGE_ALLOWED', $excludedServiceCodes, true)) {
+            $specs[] = $changeSpec;
+        }
+
+        $refundSpec = $this->flexibilityServiceSpec($text, 'REFUNDABLE', ['refund', 'refunds', 'refundable'], 45);
+
+        if ($refundSpec !== null && ! in_array('REFUNDABLE', $excludedServiceCodes, true)) {
+            $specs[] = $refundSpec;
+        }
+
+        return collect($specs)
+            ->unique(fn (array $spec): string => $spec['service_code'])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{service_code: string, value: mixed}|null
+     */
+    private function wifiServiceSpec(string $text): ?array
+    {
+        $normalized = Str::lower($text);
+
+        if (preg_match('/\b(wi-?fi|internet)\b/i', $text) !== 1) {
+            return null;
+        }
+
+        if (str_contains($normalized, 'unlimited')) {
+            return ['service_code' => 'WIFI_UNLIMITED', 'value' => true];
+        }
+
+        if (preg_match('/\b5\s*gb\b/i', $text) === 1) {
+            return ['service_code' => 'WIFI_5GB', 'value' => ['amount' => 5120, 'data_mb' => 5120]];
+        }
+
+        if (preg_match('/\b1\s*gb\b/i', $text) === 1) {
+            return ['service_code' => 'WIFI_1GB', 'value' => ['amount' => 1024, 'data_mb' => 1024]];
+        }
+
+        return ['service_code' => 'WIFI', 'value' => ['amount' => 250, 'data_mb' => 250]];
+    }
+
+    /**
+     * @param  array<int, string>  $keywords
+     * @return array{service_code: string, value: array{amount: int, allowed: bool, window_hours: int, fee_type: string, fee_amount: float}}|null
+     */
+    private function flexibilityServiceSpec(string $text, string $serviceCode, array $keywords, int $defaultPaidFee): ?array
+    {
+        $normalized = Str::lower($text);
+
+        if (! collect($keywords)->contains(fn (string $keyword): bool => str_contains($normalized, $keyword))) {
+            return null;
+        }
+
+        $negativePattern = '/\b(no|without|exclude|excluding|not)\s+('.implode('|', array_map(fn (string $keyword): string => preg_quote($keyword, '/'), $keywords)).')\b/i';
+
+        if (preg_match($negativePattern, $text) === 1) {
+            return null;
+        }
+
+        $windowHours = $this->parseWindowHours($text) ?? 24;
+        [$feeType, $feeAmount] = $this->parseFee($text, $keywords, $defaultPaidFee);
+
+        return [
+            'service_code' => $serviceCode,
+            'value' => [
+                'amount' => $windowHours,
+                'allowed' => true,
+                'window_hours' => $windowHours,
+                'fee_type' => $feeType,
+                'fee_amount' => $feeAmount,
+            ],
+        ];
+    }
+
+    private function parseWindowHours(string $text): ?int
+    {
+        if (preg_match('/\b(\d{1,3})\s*(?:h|hr|hrs|hour|hours)\b/i', $text, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        if (preg_match('/\b(\d{1,2})\s*(?:day|days)\b/i', $text, $matches) === 1) {
+            return (int) $matches[1] * 24;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, string>  $keywords
+     * @return array{0: string, 1: float}
+     */
+    private function parseFee(string $text, array $keywords, int $defaultPaidFee): array
+    {
+        $normalized = Str::lower($text);
+
+        if (collect($keywords)->contains(fn (string $keyword): bool => str_contains($normalized, "free {$keyword}") || str_contains($normalized, "{$keyword} free"))) {
+            return ['fixed', 0];
+        }
+
+        if (preg_match('/\b(\d{1,2}(?:\.\d+)?)\s*%\s*(?:fee|penalty)?\b/i', $text, $matches) === 1) {
+            return ['percent', (float) $matches[1]];
+        }
+
+        if (preg_match('/(?:\$\s*(\d{1,4})|\b(\d{1,4})\s*(?:usd|dollars?)\b)/i', $text, $matches) === 1) {
+            return ['fixed', (float) (($matches[1] ?? '') !== '' ? $matches[1] : ($matches[2] ?? 0))];
+        }
+
+        return collect($keywords)->contains(fn (string $keyword): bool => str_contains($normalized, "paid {$keyword}") || str_contains($normalized, "{$keyword} fee"))
+            ? ['fixed', $defaultPaidFee]
+            : ['fixed', 0];
+    }
+
+    /**
      * @param  array<string, mixed>  $result
      * @param  array<string, mixed>  $request
      */
@@ -255,7 +407,6 @@ class ChatbotAgent
                 : "I could not build that package right now: {$message}";
         }
 
-        $flight = is_array($result['flight'] ?? null) ? $result['flight'] : [];
         $picks = collect(is_array($result['recommended_picks'] ?? null) ? $result['recommended_picks'] : []);
         $pick = $picks->first();
 
@@ -265,54 +416,73 @@ class ChatbotAgent
                 : 'I could not find a suitable package for that route and date. Try another date.';
         }
 
-        $backup = $picks->skip(1)->first();
-        $features = $this->bundleFeatureLabels($pick);
-        $route = "{$flight['origin']}-{$flight['destination']}";
-        $schedule = collect([$flight['date'] ?? null, $flight['hour'] ?? null, $flight['arrival_hour'] ?? null])
-            ->filter()
-            ->join(' ');
         $reply = $language === 'tr'
-            ? "**{$pick['class']}** en uygun özel paket: **{$this->formatUsd($pick['base_price_usd'] ?? null)}** ({$route}, {$schedule})."
-            : "**{$pick['class']}** is the best custom bundle: **{$this->formatUsd($pick['base_price_usd'] ?? null)}** ({$route}, {$schedule}).";
+            ? 'Sana en uygun seçenekleri hazırladım.'
+            : 'Here are my top picks for you.';
 
-        if ($features !== []) {
-            $reply .= "\n- ".implode(', ', $features);
-        }
-
-        if (is_array($backup)) {
-            $reply .= $language === 'tr'
-                ? "\n- Alternatif: {$backup['class']} ({$this->formatUsd($backup['base_price_usd'] ?? null)})."
-                : "\n- Backup pick: {$backup['class']} ({$this->formatUsd($backup['base_price_usd'] ?? null)}).";
-        }
-
-        return $reply;
+        return $reply."\n\n".$this->bundleFollowUp($pick, $language);
     }
 
     /**
      * @param  array<string, mixed>  $pick
-     * @return array<int, string>
      */
-    private function bundleFeatureLabels(array $pick): array
+    private function bundleFollowUp(array $pick, string $language): string
     {
-        return collect([
-            ((int) ($pick['checked_baggage_kg'] ?? 0)) > 0 ? "{$pick['checked_baggage_kg']} kg checked bag" : null,
-            ((int) ($pick['cabin_baggage_kg'] ?? 0)) > 0 ? "{$pick['cabin_baggage_kg']} kg cabin bag" : null,
-            ($pick['seat_selection_free'] ?? false) === true ? 'seat selection included' : null,
-            ($pick['latest_change_hours'] ?? null) !== null ? 'change allowed' : null,
-            ($pick['latest_refund_hours'] ?? null) !== null ? 'refundable' : null,
+        $suggestions = collect([
+            ((int) ($pick['checked_baggage_kg'] ?? 0)) <= 0 ? 'checked bags' : null,
+            ($pick['latest_change_hours'] ?? null) === null ? 'change flexibility' : null,
+            ($pick['latest_refund_hours'] ?? null) === null ? 'refund flexibility' : null,
+            ! $this->pickIncludesService($pick, 'WIFI') ? 'Wi-Fi' : null,
+            ! $this->pickIncludesService($pick, 'LOUNGE') ? 'lounge access' : null,
+            ! $this->pickIncludesService($pick, 'FAST_TRACK') ? 'fast track' : null,
         ])
             ->filter()
+            ->take(3)
             ->values()
             ->all();
-    }
 
-    private function formatUsd(mixed $amount): string
-    {
-        if (! is_numeric($amount)) {
-            return 'price unavailable';
+        if ($suggestions === []) {
+            return $language === 'tr'
+                ? 'Bunlar uygun görünüyor mu? İstersen daha fazla konfor veya esneklik ekleyebiliriz.'
+                : 'Do these look good to you? We can still tune the comfort or flexibility.';
         }
 
-        return '$'.number_format((float) $amount, 0);
+        $joined = $this->joinSuggestions($suggestions);
+
+        return $language === 'tr'
+            ? "Bunlar uygun görünüyor mu? İstersen {$joined} ekleyebiliriz."
+            : "Do these look good to you? We can add {$joined} if that would fit the trip better.";
+    }
+
+    /**
+     * @param  array<string, mixed>  $pick
+     */
+    private function pickIncludesService(array $pick, string $code): bool
+    {
+        $services = collect(is_array($pick['services'] ?? null) ? $pick['services'] : []);
+        $service = $services->firstWhere('code', $code);
+
+        if (! is_array($service)) {
+            return false;
+        }
+
+        $value = $service['value'] ?? null;
+
+        return ServiceValue::isEnabled($value);
+    }
+
+    /**
+     * @param  array<int, string>  $suggestions
+     */
+    private function joinSuggestions(array $suggestions): string
+    {
+        if (count($suggestions) <= 1) {
+            return $suggestions[0] ?? '';
+        }
+
+        $last = array_pop($suggestions);
+
+        return implode(', ', $suggestions).' or '.$last;
     }
 
     private function directive(string $source, string $language): string
@@ -350,8 +520,8 @@ CHOOSING THE INFORMATION SOURCE:
 PACKAGE RECOMMENDATIONS:
 - For any flight-finding request where the user wants a recommendation, call build_dynamic_bundles after you know route, date and passengers.
 - The tools expose complete internal packages so you can choose well. Do NOT list every package or fare family.
-- Pick the most suitable custom package directly. If helpful, show one backup pick.
-- Keep the explanation practical: why this flight/package is right, total price, included extras, and one trade-off. Avoid long fare-rule detail unless the user asks.
+- Pick the most suitable custom package directly. If helpful, show one backup pick in the tool card, not as a long text list.
+- Keep the explanation practical and invitational. For recommendation tool results, say "Here are my top picks for you" and end by asking if they look good, suggesting relevant add-ons such as Wi-Fi, lounge, checked bags, fast track, changes, or refunds. Avoid route/date repetition because the cards show that.
 
 SPEECH-INPUT TOLERANCE: the message may have been dictated; speech recognition often mangles fare names. Infer the intended term when clear: ekstra play / extra flight -> ExtraFly; prime flight -> PrimeFly; eko fly -> EcoFly; fleks flay -> FlexFly. If unsure, confirm briefly.
 
@@ -473,6 +643,19 @@ PROMPT;
                         'return_date' => ['type' => 'string', 'description' => 'YYYY-MM-DD, required for round_trip recommendations'],
                         'service_codes' => ['type' => 'array', 'items' => ['type' => 'string']],
                         'excluded_service_codes' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Services the user explicitly does not want, for example CHECKED_BAG for no checked bags.'],
+                        'service_specs' => [
+                            'type' => 'array',
+                            'description' => 'Exact custom services to add or override. Use REFUNDABLE or CHANGE_ALLOWED with value.allowed, value.window_hours, value.fee_type fixed/percent, and value.fee_amount. Use WIFI, WIFI_1GB, WIFI_5GB, or WIFI_UNLIMITED for Wi-Fi tiers.',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'service_code' => ['type' => 'string'],
+                                    'quantity' => ['type' => 'integer', 'default' => 1],
+                                    'value' => ['type' => ['object', 'boolean', 'number', 'string']],
+                                ],
+                                'required' => ['service_code'],
+                            ],
+                        ],
                     ],
                     'required' => ['origin', 'destination', 'date'],
                 ],
@@ -616,8 +799,14 @@ PROMPT;
             'checked_baggage_kg' => $fare['checked_baggage_kg'] ?? null,
             'cabin_baggage_kg' => $fare['cabin_baggage_kg'] ?? null,
             'seat_selection_free' => $fare['seat_selection_free'] ?? null,
-            'changeable' => $fare['changeable'] ?? null,
-            'refundable' => $fare['refundable'] ?? null,
+            'change_fee_usd' => $fare['change_fee_usd'] ?? null,
+            'change_fee_percent' => $fare['change_fee_percent'] ?? null,
+            'refund_fee_usd' => $fare['refund_fee_usd'] ?? null,
+            'refund_fee_percent' => $fare['refund_fee_percent'] ?? null,
+            'latest_change_hours' => $fare['latest_change_hours'] ?? null,
+            'latest_refund_hours' => $fare['latest_refund_hours'] ?? null,
+            'change_rule' => $fare['change_rule'] ?? null,
+            'refund_rule' => $fare['refund_rule'] ?? null,
             'base_price_usd' => $fare['base_price_usd'] ?? null,
             'price_breakdown' => is_array($fare['price_breakdown'] ?? null)
                 ? ['grand_total_usd' => $fare['price_breakdown']['grand_total_usd'] ?? null]

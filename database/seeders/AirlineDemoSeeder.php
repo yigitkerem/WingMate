@@ -22,6 +22,7 @@ use App\Models\Ticket;
 use App\Models\TicketSegment;
 use App\Models\User;
 use App\Pricing\OfferBuilder;
+use App\Support\ServiceValue;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Schema;
@@ -183,18 +184,24 @@ class AirlineDemoSeeder extends Seeder
     private function seedServices(array $bundles): array
     {
         $services = collect([
-            ['CHECKED_BAG', 'Checked baggage', 'BAG', 'integer', 'kg', 35],
-            ['CABIN_BAG', 'Cabin baggage', 'BAG', 'integer', 'kg', 15],
-            ['SEAT_SELECTION', 'Seat selection', 'SEAT', 'boolean', 'seat', 18],
-            ['CHANGE_ALLOWED', 'Change right', 'FLEXIBILITY', 'boolean', 'trip', 0],
-            ['CHANGE_FEE', 'Change fee', 'FLEXIBILITY', 'decimal', 'trip', 0],
-            ['REFUNDABLE', 'Refund right', 'FLEXIBILITY', 'boolean', 'trip', 0],
-            ['REFUND_FEE', 'Refund fee', 'FLEXIBILITY', 'decimal', 'trip', 0],
-            ['LOUNGE', 'Lounge access', 'LOUNGE', 'boolean', 'passenger', 55],
-            ['FAST_TRACK', 'Fast track', 'AIRPORT', 'boolean', 'passenger', 25],
-            ['PRIORITY_BOARDING', 'Priority boarding', 'AIRPORT', 'boolean', 'passenger', 18],
-            ['WIFI', 'Wi-Fi', 'CONNECTIVITY', 'boolean', 'flight', 12],
-            ['MEAL', 'Special meal', 'MEAL', 'boolean', 'passenger', 16],
+            ['CHECKED_BAG', 'Checked baggage', 'BAG', 'integer', 'kg', 35, 3],
+            ['CABIN_BAG', 'Cabin baggage', 'BAG', 'integer', 'kg', 15, 1],
+            ['SEAT_SELECTION', 'Seat selection', 'SEAT', 'boolean', 'seat', 18, 1],
+            ['SEAT_STANDARD', 'Standard seat selection', 'SEAT', 'string', 'seat', 12, 1],
+            ['SEAT_EXIT_ROW', 'Exit row seat selection', 'SEAT', 'string', 'seat', 32, 1],
+            ['CHANGE_ALLOWED', 'Change rule', 'FLEXIBILITY', 'integer', 'hours', 16, 1],
+            ['CHANGE_FEE', 'Change fee', 'FLEXIBILITY', 'decimal', 'USD', 0, 1],
+            ['REFUNDABLE', 'Refund rule', 'FLEXIBILITY', 'integer', 'hours', 24, 1],
+            ['REFUND_FEE', 'Refund fee', 'FLEXIBILITY', 'decimal', 'USD', 0, 1],
+            ['LOUNGE', 'Lounge access', 'LOUNGE', 'boolean', 'passenger', 55, 1],
+            ['FAST_TRACK', 'Fast track', 'AIRPORT', 'boolean', 'passenger', 25, 1],
+            ['PRIORITY_BOARDING', 'Priority boarding', 'AIRPORT', 'boolean', 'passenger', 18, 1],
+            ['PRIORITY_CHECKIN', 'Priority check-in', 'AIRPORT', 'boolean', 'passenger', 16, 1],
+            ['WIFI', 'Wi-Fi 250 MB', 'CONNECTIVITY', 'integer', 'MB', 6, 1],
+            ['WIFI_1GB', 'Wi-Fi 1 GB', 'CONNECTIVITY', 'integer', 'MB', 12, 1],
+            ['WIFI_5GB', 'Wi-Fi 5 GB', 'CONNECTIVITY', 'integer', 'MB', 22, 1],
+            ['WIFI_UNLIMITED', 'Wi-Fi unlimited', 'CONNECTIVITY', 'boolean', 'flight', 35, 1],
+            ['MEAL', 'Special meal', 'MEAL', 'boolean', 'passenger', 16, 1],
         ])->mapWithKeys(function (array $row): array {
             $service = AirlineService::query()->create([
                 'code' => $row[0],
@@ -208,7 +215,7 @@ class AirlineDemoSeeder extends Seeder
                 'service_id' => $service->id,
                 'currency' => 'USD',
                 'unit_price' => $row[5],
-                'max_quantity' => $row[0] === 'CHECKED_BAG' ? 3 : 1,
+                'max_quantity' => $row[6],
             ]);
 
             return [$service->code => $service];
@@ -216,10 +223,10 @@ class AirlineDemoSeeder extends Seeder
 
         $bundleMatrix = [
             'ECOFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 0], 'SEAT_SELECTION' => false, 'CHANGE_ALLOWED' => false, 'CHANGE_FEE' => ['amount' => null], 'REFUNDABLE' => false, 'REFUND_FEE' => ['amount' => null]],
-            'EXTRAFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 23], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 55], 'REFUNDABLE' => false, 'REFUND_FEE' => ['amount' => null]],
-            'PRIMEFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 30], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 0], 'REFUNDABLE' => true, 'REFUND_FEE' => ['amount' => 45], 'PRIORITY_BOARDING' => true],
-            'BUSINESSFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 40], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 40], 'REFUNDABLE' => false, 'REFUND_FEE' => ['amount' => null], 'LOUNGE' => true, 'FAST_TRACK' => true],
-            'BUSINESSPRIME' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 50], 'SEAT_SELECTION' => true, 'CHANGE_ALLOWED' => true, 'CHANGE_FEE' => ['amount' => 0], 'REFUNDABLE' => true, 'REFUND_FEE' => ['amount' => 0], 'LOUNGE' => true, 'FAST_TRACK' => true, 'PRIORITY_BOARDING' => true],
+            'EXTRAFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 23], 'SEAT_SELECTION' => true, 'SEAT_STANDARD' => ['seat_type' => 'standard'], 'CHANGE_ALLOWED' => ['amount' => 24, 'allowed' => true, 'window_hours' => 24, 'fee_type' => 'fixed', 'fee_amount' => 55], 'CHANGE_FEE' => ['amount' => 55], 'REFUNDABLE' => false, 'REFUND_FEE' => ['amount' => null]],
+            'PRIMEFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 30], 'SEAT_SELECTION' => true, 'SEAT_STANDARD' => ['seat_type' => 'standard'], 'CHANGE_ALLOWED' => ['amount' => 72, 'allowed' => true, 'window_hours' => 72, 'fee_type' => 'fixed', 'fee_amount' => 0], 'CHANGE_FEE' => ['amount' => 0], 'REFUNDABLE' => ['amount' => 24, 'allowed' => true, 'window_hours' => 24, 'fee_type' => 'fixed', 'fee_amount' => 45], 'REFUND_FEE' => ['amount' => 45], 'PRIORITY_BOARDING' => true, 'WIFI' => ['amount' => 250, 'data_mb' => 250]],
+            'BUSINESSFLY' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 40], 'SEAT_SELECTION' => true, 'SEAT_EXIT_ROW' => ['seat_type' => 'exit_row'], 'CHANGE_ALLOWED' => ['amount' => 24, 'allowed' => true, 'window_hours' => 24, 'fee_type' => 'fixed', 'fee_amount' => 40], 'CHANGE_FEE' => ['amount' => 40], 'REFUNDABLE' => ['amount' => 72, 'allowed' => true, 'window_hours' => 72, 'fee_type' => 'percent', 'fee_amount' => 25], 'REFUND_FEE' => ['amount' => 25, 'fee_type' => 'percent'], 'LOUNGE' => true, 'FAST_TRACK' => true, 'PRIORITY_CHECKIN' => true, 'WIFI_1GB' => ['amount' => 1024, 'data_mb' => 1024]],
+            'BUSINESSPRIME' => ['CABIN_BAG' => ['amount' => 8], 'CHECKED_BAG' => ['amount' => 50], 'SEAT_SELECTION' => true, 'SEAT_EXIT_ROW' => ['seat_type' => 'exit_row'], 'CHANGE_ALLOWED' => ['amount' => 360, 'allowed' => true, 'window_hours' => 360, 'fee_type' => 'fixed', 'fee_amount' => 0], 'CHANGE_FEE' => ['amount' => 0], 'REFUNDABLE' => ['amount' => 240, 'allowed' => true, 'window_hours' => 240, 'fee_type' => 'fixed', 'fee_amount' => 0], 'REFUND_FEE' => ['amount' => 0], 'LOUNGE' => true, 'FAST_TRACK' => true, 'PRIORITY_BOARDING' => true, 'PRIORITY_CHECKIN' => true, 'WIFI_UNLIMITED' => true],
         ];
 
         foreach ($bundleMatrix as $bundleCode => $serviceValues) {
@@ -251,19 +258,7 @@ class AirlineDemoSeeder extends Seeder
 
     private function serviceValueIsIncluded(mixed $value): bool
     {
-        if (is_array($value)) {
-            return ((float) ($value['amount'] ?? 0)) > 0;
-        }
-
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        if (is_numeric($value)) {
-            return ((float) $value) > 0;
-        }
-
-        return $value !== null && $value !== '';
+        return ServiceValue::isEnabled($value);
     }
 
     private function seedRules(): void

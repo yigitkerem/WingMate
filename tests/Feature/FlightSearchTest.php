@@ -118,6 +118,40 @@ test('seeded no change and no refund fares expose unavailable flexibility window
     }
 });
 
+test('seeded premium fares expose rich flexibility rules', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        $origin = Airport::query()->where('iata_code', 'IST')->firstOrFail();
+        $destination = Airport::query()->where('iata_code', 'LHR')->firstOrFail();
+
+        $this->post(route('flight-search.search'), [
+            'origin_airport_id' => $origin->id,
+            'destination_airport_id' => $destination->id,
+            'trip_type' => 'one_way',
+            'depart_date' => '2026-07-29',
+            'search_mode' => 'basic',
+            'adults' => 1,
+            'children' => 0,
+            'babies' => 0,
+        ])
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('results.outbound.0.fares.3.package_code', 'BUSINESSFLY')
+                ->where('results.outbound.0.fares.3.latest_refund_hours', 72)
+                ->where('results.outbound.0.fares.3.refund_fee_usd', null)
+                ->where('results.outbound.0.fares.3.refund_fee_percent', 25)
+                ->where('results.outbound.0.fares.4.package_code', 'BUSINESSPRIME')
+                ->where('results.outbound.0.fares.4.latest_change_hours', 360)
+                ->where('results.outbound.0.fares.4.latest_refund_hours', 240),
+            );
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('origin and destination must be different', function () {
     $fixture = createSellablePricingFixture();
 

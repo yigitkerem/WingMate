@@ -10,6 +10,8 @@ use App\Models\FlightInventory;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Pricing\OfferBuilder;
+use App\Support\ServiceValue;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -228,10 +230,14 @@ class ChatbotToolbox
             ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
             ->values()
             ->all();
+        $serviceSpecs = collect(is_array($toolInput['service_specs'] ?? null) ? $toolInput['service_specs'] : [])
+            ->filter(fn (mixed $serviceSpec): bool => is_array($serviceSpec) && is_string($serviceSpec['service_code'] ?? null))
+            ->values()
+            ->all();
 
         $picks = collect(is_array($firstFlight['fares'] ?? null) ? $firstFlight['fares'] : [])
             ->filter(fn (array $fare): bool => ($fare['available'] ?? false) === true)
-            ->map(fn (array $fare): array => $this->customizeFareForDemand($fare, $toolInput, $preferredServices, $excludedServices))
+            ->map(fn (array $fare): array => $this->customizeFareForDemand($fare, $toolInput, $preferredServices, $excludedServices, $serviceSpecs))
             ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices): int {
                 $firstExcludedCount = $this->includedExcludedServiceCount($firstFare, $excludedServices);
                 $secondExcludedCount = $this->includedExcludedServiceCount($secondFare, $excludedServices);
@@ -283,7 +289,7 @@ class ChatbotToolbox
                 ->map(fn (array $fare): array => $this->customizeFareForDemand($fare, [
                     ...$toolInput,
                     'date' => (string) $toolInput['return_date'],
-                ], $preferredServices, $excludedServices))
+                ], $preferredServices, $excludedServices, $serviceSpecs))
                 ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices): int {
                     $firstExcludedCount = $this->includedExcludedServiceCount($firstFare, $excludedServices);
                     $secondExcludedCount = $this->includedExcludedServiceCount($secondFare, $excludedServices);
@@ -355,11 +361,12 @@ class ChatbotToolbox
      * @param  array<string, mixed>  $toolInput
      * @param  array<int, string>  $preferredServices
      * @param  array<int, string>  $excludedServices
+     * @param  array<int, array<string, mixed>>  $serviceSpecs
      * @return array<string, mixed>
      */
-    private function customizeFareForDemand(array $fare, array $toolInput, array $preferredServices, array $excludedServices): array
+    private function customizeFareForDemand(array $fare, array $toolInput, array $preferredServices, array $excludedServices, array $serviceSpecs): array
     {
-        $selectedServices = $this->selectedServicesForDemand($fare, $preferredServices, $excludedServices);
+        $selectedServices = $this->selectedServicesForDemand($fare, $preferredServices, $excludedServices, $serviceSpecs);
 
         if ($selectedServices === []) {
             return $fare;
@@ -387,7 +394,7 @@ class ChatbotToolbox
 
         return [
             ...$this->offerFare($offer, max(1, (int) ($toolInput['adults'] ?? 1) + (int) ($toolInput['children'] ?? 0))),
-            'class' => 'Wingo Custom '.$offer->bundle->name,
+            'class' => 'Custom offer',
             'customized' => true,
             'customized_service_codes' => collect($selectedServices)
                 ->pluck('service_code')
@@ -399,9 +406,11 @@ class ChatbotToolbox
     /**
      * @param  array<string, mixed>  $fare
      * @param  array<int, string>  $preferredServices
+     * @param  array<int, string>  $excludedServices
+     * @param  array<int, array<string, mixed>>  $serviceSpecs
      * @return array<int, array{service_code: string, quantity?: int, value?: mixed}>
      */
-    private function selectedServicesForDemand(array $fare, array $preferredServices, array $excludedServices): array
+    private function selectedServicesForDemand(array $fare, array $preferredServices, array $excludedServices, array $serviceSpecs): array
     {
         $selected = [];
 
@@ -416,7 +425,19 @@ class ChatbotToolbox
             ];
         }
 
+        foreach ($serviceSpecs as $serviceSpec) {
+            $selected[] = [
+                'service_code' => (string) $serviceSpec['service_code'],
+                'quantity' => max(1, (int) ($serviceSpec['quantity'] ?? 1)),
+                'value' => $serviceSpec['value'] ?? $this->defaultSelectedServiceValue((string) $serviceSpec['service_code']),
+            ];
+        }
+
         foreach ($preferredServices as $serviceCode) {
+            if (collect($serviceSpecs)->contains(fn (array $serviceSpec): bool => ($serviceSpec['service_code'] ?? null) === $serviceCode)) {
+                continue;
+            }
+
             if ($this->fareIncludesServiceCode($fare, $serviceCode)) {
                 continue;
             }
@@ -451,6 +472,11 @@ class ChatbotToolbox
         return match ($serviceCode) {
             'CHECKED_BAG' => ['amount' => 23],
             'CABIN_BAG' => ['amount' => 8],
+            'CHANGE_ALLOWED' => ['amount' => 24, 'allowed' => true, 'window_hours' => 24, 'fee_type' => 'fixed', 'fee_amount' => 55],
+            'REFUNDABLE' => ['amount' => 24, 'allowed' => true, 'window_hours' => 24, 'fee_type' => 'percent', 'fee_amount' => 25],
+            'WIFI' => ['amount' => 250, 'data_mb' => 250],
+            'WIFI_1GB' => ['amount' => 1024, 'data_mb' => 1024],
+            'WIFI_5GB' => ['amount' => 5120, 'data_mb' => 5120],
             default => true,
         };
     }
@@ -488,21 +514,7 @@ class ChatbotToolbox
      */
     private function serviceIsIncluded(array $service): bool
     {
-        $value = $service['value'] ?? null;
-
-        if (is_array($value)) {
-            return ((float) ($value['amount'] ?? 0)) > 0;
-        }
-
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        if (is_numeric($value)) {
-            return ((float) $value) > 0;
-        }
-
-        return $value !== null && $value !== '';
+        return ServiceValue::isEnabled($service['value'] ?? null);
     }
 
     /**
@@ -549,8 +561,10 @@ class ChatbotToolbox
 
             $value = $service['value'] ?? $default;
 
-            return is_array($value) ? ($value['amount'] ?? $default) : $value;
+            return ServiceValue::amount($value, $default);
         };
+        $changePolicy = $this->flexibilityPolicy($services, 'CHANGE_ALLOWED', 'CHANGE_FEE');
+        $refundPolicy = $this->flexibilityPolicy($services, 'REFUNDABLE', 'REFUND_FEE');
 
         return [
             'id' => $offer->id,
@@ -569,10 +583,14 @@ class ChatbotToolbox
             'checked_baggage_kg' => (int) $serviceValue('CHECKED_BAG', 0),
             'cabin_baggage_kg' => (int) $serviceValue('CABIN_BAG', 0),
             'seat_selection_free' => (bool) $serviceValue('SEAT_SELECTION', false),
-            'change_fee_usd' => (int) $serviceValue('CHANGE_FEE', 0),
-            'refund_fee_usd' => (int) $serviceValue('REFUND_FEE', 0),
-            'latest_change_hours' => $serviceValue('CHANGE_ALLOWED') ? 24 : null,
-            'latest_refund_hours' => $serviceValue('REFUNDABLE') ? 24 : null,
+            'change_fee_usd' => $this->fixedFee($changePolicy),
+            'change_fee_percent' => $this->percentFee($changePolicy),
+            'refund_fee_usd' => $this->fixedFee($refundPolicy),
+            'refund_fee_percent' => $this->percentFee($refundPolicy),
+            'latest_change_hours' => $changePolicy['window_hours'] ?? null,
+            'latest_refund_hours' => $refundPolicy['window_hours'] ?? null,
+            'change_rule' => $changePolicy,
+            'refund_rule' => $refundPolicy,
             'count_available' => FlightInventory::query()
                 ->where('flight_id', $offer->flight_id)
                 ->where('booking_class_id', $offer->booking_class_id)
@@ -590,6 +608,61 @@ class ChatbotToolbox
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $services
+     * @return array{allowed: bool, window_hours: int, fee_type: string, fee_amount: float}|null
+     */
+    private function flexibilityPolicy(Collection $services, string $ruleCode, string $feeCode): ?array
+    {
+        $ruleService = $services->firstWhere('code', $ruleCode);
+
+        if (! is_array($ruleService) || ! ServiceValue::isEnabled($ruleService['value'] ?? null)) {
+            return null;
+        }
+
+        $feeService = $services->firstWhere('code', $feeCode);
+        $feeValue = is_array($feeService) ? ($feeService['value'] ?? null) : null;
+        $value = $ruleService['value'] ?? true;
+        $windowHours = 24;
+        $feeType = is_array($feeValue) ? (string) ($feeValue['fee_type'] ?? 'fixed') : 'fixed';
+        $feeAmount = (float) ServiceValue::amount($feeValue, 0);
+
+        if (is_array($value)) {
+            $windowHours = (int) ($value['window_hours'] ?? ServiceValue::amount($value, 24));
+            $feeType = (string) ($value['fee_type'] ?? $feeType);
+            $feeAmount = (float) ($value['fee_amount'] ?? $feeAmount);
+        } elseif (is_numeric($value)) {
+            $windowHours = (int) $value;
+        }
+
+        return [
+            'allowed' => true,
+            'window_hours' => max(1, $windowHours),
+            'fee_type' => $feeType === 'percent' ? 'percent' : 'fixed',
+            'fee_amount' => $feeAmount,
+        ];
+    }
+
+    /**
+     * @param  array{fee_type: string, fee_amount: float}|null  $policy
+     */
+    private function fixedFee(?array $policy): ?int
+    {
+        if ($policy === null) {
+            return 0;
+        }
+
+        return $policy['fee_type'] === 'fixed' ? (int) $policy['fee_amount'] : null;
+    }
+
+    /**
+     * @param  array{fee_type: string, fee_amount: float}|null  $policy
+     */
+    private function percentFee(?array $policy): ?int
+    {
+        return $policy !== null && $policy['fee_type'] === 'percent' ? (int) $policy['fee_amount'] : null;
     }
 
     /**

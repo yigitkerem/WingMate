@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
     CalendarRange,
@@ -15,10 +15,12 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import {
+    formatShortDate,
     readStoredWingoSearchPrefill,
     wingoSearchPrefillEvent,
 } from '@/lib/flight-search';
 import type { WingoSearchPrefill } from '@/lib/flight-search';
+import type { CustomerSummary } from '@/types/flight-search';
 
 type ChatMessage = {
     id: string;
@@ -211,7 +213,38 @@ function numberList(value: unknown): number[] {
 
 function serviceValueLabel(value: unknown): string {
     if (isRecord(value)) {
+        if (value.allowed === true && typeof value.window_hours === 'number') {
+            const feeAmount = numberValue(value.fee_amount) ?? 0;
+            const feeType = textValue(value.fee_type);
+            const fee =
+                feeType === 'percent'
+                    ? `${feeAmount}% fee`
+                    : feeAmount === 0
+                      ? 'No fee'
+                      : `$${feeAmount} fee`;
+
+            return `${fee} until ${value.window_hours}h`;
+        }
+
+        if (value.unlimited === true) {
+            return 'Unlimited';
+        }
+
+        if (typeof value.data_mb === 'number') {
+            return value.data_mb >= 1024
+                ? `${Math.round(value.data_mb / 1024)} GB`
+                : `${value.data_mb} MB`;
+        }
+
+        if (typeof value.seat_type === 'string') {
+            return value.seat_type === 'exit_row' ? 'Exit row' : 'Standard';
+        }
+
         const amount = value.amount;
+
+        if (amount === null || amount === false || amount === 0) {
+            return 'Not included';
+        }
 
         if (typeof amount === 'number' || typeof amount === 'string') {
             return String(amount);
@@ -235,7 +268,7 @@ function sourceLabel(value: unknown): string {
     const source = textValue(value);
 
     if (source === 'customer') {
-        return 'Custom add-on';
+        return 'Custom choice';
     }
 
     if (source === 'rule') {
@@ -245,22 +278,240 @@ function sourceLabel(value: unknown): string {
     return 'Package';
 }
 
-function featureRowsFromFare(fare: Record<string, unknown>): FeatureRow[] {
-    const serviceRows = asRecords(fare.services).map((service) => ({
-        label: textValue(service.name) ?? textValue(service.code) ?? 'Service',
-        value: serviceValueLabel(service.value),
-        source: sourceLabel(service.source),
-    }));
-
-    if (serviceRows.length > 0) {
-        return serviceRows;
+function serviceIsEnabled(service?: Record<string, unknown>): boolean {
+    if (!service) {
+        return false;
     }
 
-    return fareDetails(fare).map((detail) => ({
-        label: detail,
-        value: 'Included',
-        source: 'Package',
-    }));
+    const value = service.value;
+
+    if (isRecord(value)) {
+        if (typeof value.allowed === 'boolean') {
+            return value.allowed;
+        }
+
+        if (value.unlimited === true) {
+            return true;
+        }
+
+        if (
+            typeof value.window_hours === 'number' ||
+            typeof value.data_mb === 'number' ||
+            typeof value.seat_type === 'string'
+        ) {
+            return true;
+        }
+
+        return Number(value.amount ?? 0) > 0;
+    }
+
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    if (typeof value === 'number') {
+        return value > 0;
+    }
+
+    return textValue(value) !== undefined;
+}
+
+function serviceByCode(
+    services: Record<string, unknown>[],
+    code: string,
+): Record<string, unknown> | undefined {
+    return services.find((service) => textValue(service.code) === code);
+}
+
+function serviceSource(
+    services: Record<string, unknown>[],
+    code: string,
+): string {
+    const service = serviceByCode(services, code);
+
+    if (!service) {
+        return 'Not included';
+    }
+
+    return sourceLabel(service.source);
+}
+
+function serviceAmount(
+    services: Record<string, unknown>[],
+    code: string,
+): number {
+    const service = serviceByCode(services, code);
+
+    if (!service) {
+        return 0;
+    }
+
+    const value = service.value;
+
+    if (isRecord(value)) {
+        return Number(value.amount ?? 0);
+    }
+
+    return numberValue(value) ?? 0;
+}
+
+function featureRowsFromFare(fare: Record<string, unknown>): FeatureRow[] {
+    const services = asRecords(fare.services);
+    const checkedBag =
+        numberValue(fare.checked_baggage_kg) ??
+        serviceAmount(services, 'CHECKED_BAG');
+    const cabinBag =
+        numberValue(fare.cabin_baggage_kg) ??
+        serviceAmount(services, 'CABIN_BAG');
+    const seatSelection =
+        booleanValue(fare.seat_selection_free) ??
+        serviceIsEnabled(serviceByCode(services, 'SEAT_SELECTION'));
+    const changeFee = numberValue(fare.change_fee_usd);
+    const refundFee = numberValue(fare.refund_fee_usd);
+    const changeFeePercent = numberValue(fare.change_fee_percent);
+    const refundFeePercent = numberValue(fare.refund_fee_percent);
+    const changeHours = numberValue(fare.latest_change_hours);
+    const refundHours = numberValue(fare.latest_refund_hours);
+    const coreCodes = new Set([
+        'CHECKED_BAG',
+        'CABIN_BAG',
+        'SEAT_SELECTION',
+        'CHANGE_ALLOWED',
+        'CHANGE_FEE',
+        'REFUNDABLE',
+        'REFUND_FEE',
+        'SEAT_STANDARD',
+        'SEAT_EXIT_ROW',
+    ]);
+
+    const rows: FeatureRow[] = [
+        {
+            label: 'Checked bag',
+            value: checkedBag > 0 ? `${checkedBag} kg` : 'Not included',
+            source: serviceSource(services, 'CHECKED_BAG'),
+        },
+        {
+            label: 'Cabin bag',
+            value: cabinBag > 0 ? `${cabinBag} kg` : 'Not included',
+            source: serviceSource(services, 'CABIN_BAG'),
+        },
+        {
+            label: 'Seat selection',
+            value:
+                serviceIsEnabled(serviceByCode(services, 'SEAT_EXIT_ROW'))
+                    ? 'Exit row'
+                    : serviceIsEnabled(serviceByCode(services, 'SEAT_STANDARD'))
+                      ? 'Standard'
+                      : seatSelection
+                        ? 'Included'
+                        : 'Not included',
+            source: serviceSource(services, 'SEAT_SELECTION'),
+        },
+        {
+            label: 'Changes',
+            value:
+                changeHours !== undefined
+                    ? changeFeePercent !== undefined
+                        ? `${changeFeePercent}% fee until ${changeHours}h`
+                        : changeFee === 0
+                        ? `No fee until ${changeHours}h`
+                        : `$${changeFee ?? 0} fee until ${changeHours}h`
+                    : 'Not included',
+            source: serviceSource(services, 'CHANGE_ALLOWED'),
+        },
+        {
+            label: 'Refunds',
+            value:
+                refundHours !== undefined
+                    ? refundFeePercent !== undefined
+                        ? `${refundFeePercent}% fee until ${refundHours}h`
+                        : refundFee === 0
+                        ? `No fee until ${refundHours}h`
+                        : `$${refundFee ?? 0} fee until ${refundHours}h`
+                    : 'Not included',
+            source: serviceSource(services, 'REFUNDABLE'),
+        },
+    ];
+
+    const extraRows = services
+        .filter((service) => {
+            const code = textValue(service.code);
+
+            return code !== undefined && !coreCodes.has(code);
+        })
+        .map((service) => ({
+            label:
+                textValue(service.name) ?? textValue(service.code) ?? 'Service',
+            value: serviceIsEnabled(service)
+                ? serviceValueLabel(service.value)
+                : 'Not included',
+            source: sourceLabel(service.source),
+        }));
+
+    return [...rows, ...extraRows];
+}
+
+function formatFlightDate(value?: string): string {
+    if (!value) {
+        return 'date';
+    }
+
+    try {
+        return formatShortDate(value);
+    } catch {
+        return value;
+    }
+}
+
+function customerFirstName(customer?: CustomerSummary): string | undefined {
+    return customer?.firstName.trim() || undefined;
+}
+
+function cardTitle(card: FlightCard, customer?: CustomerSummary): string {
+    if (!card.isCustom) {
+        return card.title;
+    }
+
+    const firstName = customerFirstName(customer);
+
+    return firstName ? `${firstName}'s custom offer` : 'Custom offer';
+}
+
+function routeDestination(card: FlightCard): string {
+    const lastSegment = card.segments[card.segments.length - 1];
+
+    return lastSegment?.destination ?? 'your trip';
+}
+
+function detailIncludes(card: FlightCard, pattern: RegExp): boolean {
+    return card.details.some((detail) => pattern.test(detail));
+}
+
+function bridgeSuggestion(first: FlightCard, second: FlightCard): string {
+    const destination = routeDestination(first);
+
+    if (
+        detailIncludes(second, /^\d+ kg checked bag/i) &&
+        detailIncludes(first, /no checked bag/i)
+    ) {
+        return `Or, we can add checked bags so you have more room for ${destination}.`;
+    }
+
+    if (
+        detailIncludes(second, /^(free change|change allowed)/i) &&
+        detailIncludes(first, /no change/i)
+    ) {
+        return 'Or, we can add change flexibility so the plan can move with you.';
+    }
+
+    if (
+        detailIncludes(second, /^(free refund|refundable)/i) &&
+        detailIncludes(first, /no refund/i)
+    ) {
+        return 'Or, we can add refund flexibility if you want a softer fallback.';
+    }
+
+    return `Or, we can tune this with more comfort for ${destination} if the trip needs it.`;
 }
 
 function builderFromPrefill(
@@ -401,6 +652,8 @@ function fareDetails(fare: Record<string, unknown>): string[] {
     const seatSelection = booleanValue(fare.seat_selection_free);
     const changeFee = numberValue(fare.change_fee_usd);
     const refundFee = numberValue(fare.refund_fee_usd);
+    const changeFeePercent = numberValue(fare.change_fee_percent);
+    const refundFeePercent = numberValue(fare.refund_fee_percent);
     const changeable =
         fare.latest_change_hours !== null &&
         fare.latest_change_hours !== undefined;
@@ -415,12 +668,16 @@ function fareDetails(fare: Record<string, unknown>): string[] {
             ? 'Seat selection included'
             : 'Seat selection paid',
         changeable
-            ? changeFee === 0
+            ? changeFeePercent !== undefined
+                ? `${changeFeePercent}% change fee`
+                : changeFee === 0
                 ? 'Free change'
                 : `Change allowed, $${changeFee} fee`
             : 'No change allowed',
         refundable
-            ? refundFee === 0
+            ? refundFeePercent !== undefined
+                ? `${refundFeePercent}% refund fee`
+                : refundFee === 0
                 ? 'Free refund'
                 : `Refundable, $${refundFee} fee`
             : 'No refund allowed',
@@ -543,6 +800,8 @@ function flightCardsFromTrace(toolTrace?: ToolTrace[]): FlightCard[] {
 }
 
 export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
+    const { props } = usePage<{ customer?: CustomerSummary }>();
+    const customer = props.customer;
     const [input, setInput] = useState('');
     const [searchPrefill, setSearchPrefill] =
         useState<WingoSearchPrefill | null>(() =>
@@ -893,6 +1152,7 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
                             {message.role === 'assistant' && (
                                 <FlightSuggestionCards
                                     toolTrace={message.toolTrace}
+                                    customer={customer}
                                     onSelect={setCheckoutTarget}
                                 />
                             )}
@@ -1084,6 +1344,7 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
             {checkoutTarget && (
                 <WingoCheckoutModal
                     target={checkoutTarget}
+                    customer={customer}
                     onClose={() => setCheckoutTarget(null)}
                 />
             )}
@@ -1182,9 +1443,11 @@ function RichMessage({
 
 function FlightSuggestionCards({
     toolTrace,
+    customer,
     onSelect,
 }: {
     toolTrace?: ToolTrace[];
+    customer?: CustomerSummary;
     onSelect: (target: CheckoutTarget) => void;
 }) {
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -1200,59 +1463,69 @@ function FlightSuggestionCards({
                 const isExpanded = expandedKey === card.key;
 
                 return (
-                    <article
-                        key={card.key}
-                        className="animate-in overflow-hidden rounded-md border border-slate-200 bg-white text-slate-950 shadow-sm transition-all duration-300 fade-in-50 slide-in-from-bottom-1 hover:-translate-y-0.5 hover:border-red-200 hover:shadow-md"
-                        style={{ animationDelay: `${index * 70}ms` }}
-                    >
-                        <button
-                            type="button"
-                            className="block w-full text-left"
-                            aria-expanded={isExpanded}
-                            onClick={() =>
-                                setExpandedKey(isExpanded ? null : card.key)
-                            }
+                    <div key={card.key} className="grid gap-3">
+                        {index === 1 && (
+                            <p className="animate-in rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 font-semibold text-red-900 duration-300 fade-in-50 slide-in-from-bottom-1">
+                                {bridgeSuggestion(cards[0], card)}
+                            </p>
+                        )}
+                        <article
+                            className="animate-in overflow-hidden rounded-md border border-slate-200 bg-white text-slate-950 shadow-sm transition-all duration-300 fade-in-50 slide-in-from-bottom-1 hover:-translate-y-0.5 hover:border-red-200 hover:shadow-md"
+                            style={{ animationDelay: `${index * 70}ms` }}
                         >
-                            <FlightDisplay card={card} expanded={isExpanded} />
-                        </button>
-
-                        <div
-                            className={`grid transition-all duration-300 ${
-                                isExpanded
-                                    ? 'grid-rows-[1fr] opacity-100'
-                                    : 'grid-rows-[0fr] opacity-0'
-                            }`}
-                        >
-                            <div className="overflow-hidden">
-                                <div className="animate-in border-t border-slate-200 bg-slate-50/80 p-3 duration-300 fade-in-50 slide-in-from-top-1">
-                                    <FeatureTable
-                                        featureRows={card.featureRows}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-3">
-                            <div className="flex min-w-0 flex-wrap gap-1.5">
-                                {card.details.slice(0, 3).map((detail) => (
-                                    <span
-                                        key={detail}
-                                        className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-800 transition-colors"
-                                    >
-                                        {detail}
-                                    </span>
-                                ))}
-                            </div>
                             <button
                                 type="button"
-                                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-red-800 px-3 text-xs font-black text-white transition-all duration-200 hover:-translate-y-px hover:bg-red-900 hover:shadow-sm active:translate-y-0"
-                                onClick={() => onSelect(card)}
+                                className="block w-full text-left"
+                                aria-expanded={isExpanded}
+                                onClick={() =>
+                                    setExpandedKey(isExpanded ? null : card.key)
+                                }
                             >
-                                Checkout
-                                <ArrowRight className="size-3.5" />
+                                <FlightDisplay
+                                    card={card}
+                                    customer={customer}
+                                    expanded={isExpanded}
+                                />
                             </button>
-                        </div>
-                    </article>
+
+                            <div
+                                className={`grid transition-all duration-300 ${
+                                    isExpanded
+                                        ? 'grid-rows-[1fr] opacity-100'
+                                        : 'grid-rows-[0fr] opacity-0'
+                                }`}
+                            >
+                                <div className="overflow-hidden">
+                                    <div className="animate-in border-t border-slate-200 bg-slate-50/80 p-3 duration-300 fade-in-50 slide-in-from-top-1">
+                                        <FeatureTable
+                                            featureRows={card.featureRows}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-3">
+                                <div className="flex min-w-0 flex-wrap gap-1.5">
+                                    {card.details.slice(0, 3).map((detail) => (
+                                        <span
+                                            key={detail}
+                                            className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-800 transition-colors"
+                                        >
+                                            {detail}
+                                        </span>
+                                    ))}
+                                </div>
+                                <button
+                                    type="button"
+                                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-red-800 px-3 text-xs font-black text-white transition-all duration-200 hover:-translate-y-px hover:bg-red-900 hover:shadow-sm active:translate-y-0"
+                                    onClick={() => onSelect(card)}
+                                >
+                                    Checkout
+                                    <ArrowRight className="size-3.5" />
+                                </button>
+                            </div>
+                        </article>
+                    </div>
                 );
             })}
         </div>
@@ -1261,9 +1534,11 @@ function FlightSuggestionCards({
 
 function FlightDisplay({
     card,
+    customer,
     expanded,
 }: {
     card: FlightCard;
+    customer?: CustomerSummary;
     expanded: boolean;
 }) {
     const firstSegment = card.segments[0];
@@ -1289,7 +1564,7 @@ function FlightDisplay({
                         )}
                     </div>
                     <div className="mt-2 truncate text-base font-black text-slate-950">
-                        {card.title}
+                        {cardTitle(card, customer)}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
                         <span>{firstSegment?.flightNumber ?? 'Flight'}</span>
@@ -1324,7 +1599,7 @@ function FlightDisplay({
                         <div className="h-px flex-1 bg-slate-300" />
                         <img
                             src="/assets/thy-emblem.svg"
-                            className="mx-2 size-7 shrink-0 object-contain"
+                            className="mx-1.5 size-5 shrink-0 object-contain"
                             alt="Turkish Airlines"
                         />
                         <div className="h-px flex-1 bg-slate-300" />
@@ -1339,10 +1614,7 @@ function FlightDisplay({
                 />
             </div>
 
-            <div className="flex items-center justify-between gap-3 text-xs">
-                <div className="min-w-0 truncate font-semibold text-slate-600">
-                    {card.route ?? 'Selected route'}
-                </div>
+            <div className="flex items-center justify-end gap-3 text-xs">
                 <div className="inline-flex shrink-0 items-center gap-1 font-black text-red-800">
                     Features
                     <ChevronDown
@@ -1378,7 +1650,7 @@ function FlightEndpoint({
                 {code ?? '---'}
             </div>
             <div className="mt-0.5 text-[11px] leading-4 font-medium text-slate-500">
-                {date ?? 'date'}
+                {formatFlightDate(date)}
             </div>
         </div>
     );
@@ -1425,9 +1697,11 @@ function FeatureTable({ featureRows }: { featureRows: FeatureRow[] }) {
 
 function WingoCheckoutModal({
     target,
+    customer,
     onClose,
 }: {
     target: CheckoutTarget;
+    customer?: CustomerSummary;
     onClose: () => void;
 }) {
     const [featuresOpen, setFeaturesOpen] = useState(true);
@@ -1474,7 +1748,7 @@ function WingoCheckoutModal({
                             Checkout
                         </div>
                         <h2 className="mt-1 text-xl font-black">
-                            {target.title} · {target.price}
+                            {cardTitle(target, customer)} · {target.price}
                         </h2>
                     </div>
                     <button
@@ -1489,7 +1763,11 @@ function WingoCheckoutModal({
 
                 <div className="grid gap-4 p-5">
                     <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
-                        <FlightDisplay card={target} expanded={featuresOpen} />
+                        <FlightDisplay
+                            card={target}
+                            customer={customer}
+                            expanded={featuresOpen}
+                        />
                     </div>
 
                     <button
@@ -1682,12 +1960,7 @@ function ChatHeader({ onClose }: { onClose: () => void }) {
                     />
                 </div>
                 <div>
-                    <div className="text-lg leading-none font-bold">
-                        Fare Assistant
-                    </div>
-                    <div className="mt-1.5 text-[11px] text-white/80">
-                        AI-supported travel advisor
-                    </div>
+                    <div className="text-lg leading-none font-bold">Wingo</div>
                 </div>
             </div>
         </div>

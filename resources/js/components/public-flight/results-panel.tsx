@@ -547,6 +547,7 @@ function PackageTable({
                     'change',
                     fare.change_fee_usd,
                     fare.latest_change_hours,
+                    fare.change_fee_percent,
                 ),
         },
         {
@@ -558,6 +559,7 @@ function PackageTable({
                     'refund',
                     fare.refund_fee_usd,
                     fare.latest_refund_hours,
+                    fare.refund_fee_percent,
                 ),
         },
     ];
