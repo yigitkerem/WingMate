@@ -11,6 +11,7 @@ const lastDestinationAirportStorageKey =
 const wingoSearchPrefillStorageKey = 'dynamic-pricer:wingo-search-prefill';
 
 export const wingoSearchPrefillEvent = 'dynamic-pricer:wingo-search-prefill';
+export const wingoLaunchEvent = 'dynamic-pricer:wingo-launch';
 
 export type WingoSearchPrefill = {
     origin?: string;
@@ -21,6 +22,25 @@ export type WingoSearchPrefill = {
     adults?: number;
     children?: number;
     babies?: number;
+};
+
+export type WingoTriggerContext = {
+    flight_number?: string;
+    cabin?: string;
+    origin?: string;
+    destination?: string;
+    date?: string;
+    hour?: string;
+    adults?: number;
+    children?: number;
+    babies?: number;
+};
+
+export type WingoLaunchDetail = {
+    message?: string;
+    trigger?: string;
+    triggerContext?: WingoTriggerContext;
+    prefill?: WingoSearchPrefill;
 };
 
 export const featuredRoutes = [
@@ -117,6 +137,25 @@ export function publishWingoSearchPrefill(
     window.dispatchEvent(
         new CustomEvent<WingoSearchPrefill>(wingoSearchPrefillEvent, {
             detail: prefill,
+        }),
+    );
+}
+
+export function publishWingoLaunch(detail: WingoLaunchDetail): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    if (detail.prefill) {
+        window.sessionStorage.setItem(
+            wingoSearchPrefillStorageKey,
+            JSON.stringify(detail.prefill),
+        );
+    }
+
+    window.dispatchEvent(
+        new CustomEvent<WingoLaunchDetail>(wingoLaunchEvent, {
+            detail,
         }),
     );
 }
@@ -226,17 +265,36 @@ export function fareRuleLabel(
     feeUsd: number | null | undefined,
     latestHours?: number | null,
     feePercent?: number | null,
+    locale = 'en',
 ): string {
+    const isTurkish = locale === 'tr';
+
     if (latestHours === null || latestHours === undefined) {
+        if (isTurkish) {
+            return rule === 'change' ? 'Değişiklik yapılamaz' : 'İade yapılamaz';
+        }
+
         return rule === 'change' ? 'No change allowed' : 'No refund allowed';
     }
 
     if (feePercent !== null && feePercent !== undefined) {
+        if (isTurkish) {
+            return `${latestHours} saate kadar %${feePercent} ücret`;
+        }
+
         return `${feePercent}% fee until ${latestHours}h`;
     }
 
     if ((feeUsd ?? 0) === 0) {
+        if (isTurkish) {
+            return `${latestHours} saate kadar ücretsiz`;
+        }
+
         return `No fee until ${latestHours}h`;
+    }
+
+    if (isTurkish) {
+        return `${latestHours} saate kadar $${feeUsd} ücret`;
     }
 
     return `$${feeUsd} fee until ${latestHours}h`;

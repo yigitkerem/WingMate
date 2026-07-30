@@ -9,6 +9,11 @@ use App\Models\BaseFare;
 use App\Models\FlightInventory;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\Service;
+use App\Models\ServiceConstraint;
+use App\Models\ServicePrice;
+use App\Models\Ticket;
+use App\Models\User;
 use App\Pricing\OfferBuilder;
 use App\Support\ServiceValue;
 use Illuminate\Support\Collection;
@@ -27,17 +32,23 @@ class ChatbotToolbox
     /**
      * @param  array<string, mixed>  $toolInput
      * @param  array<string, mixed>|null  $pendingPurchase
+     * @param  array<string, mixed>  $meta
      * @return array{result: array<string, mixed>, pending_purchase: array<string, mixed>|null}
      */
-    public function dispatch(string $name, array $toolInput, ?array $pendingPurchase, bool $userConfirmed): array
+    public function dispatch(string $name, array $toolInput, ?array $pendingPurchase, bool $userConfirmed, ?User $user = null, array $meta = []): array
     {
         $result = match ($name) {
             'list_airports' => $this->listAirports(),
-            'search_flights' => $this->search($toolInput),
-            'quote_purchase' => $this->quotePurchase($toolInput),
+            'airports_for_city' => $this->airportsForCity($toolInput),
+            'list_customizations' => $this->listCustomizations(),
+            'customer_history' => $this->customerHistory($user),
+            'ask_follow_up' => $this->askFollowUp($toolInput),
+            'search_flights' => $this->search($toolInput, $user),
+            'present_offers' => $this->presentOffers($toolInput, $meta),
+            'quote_purchase' => $this->quotePurchase($toolInput, $user),
             'commit_purchase' => $this->commitPurchase($pendingPurchase, $userConfirmed),
             'search_knowledge_base' => $this->knowledgeBaseSearch->search((string) $toolInput['query'], (int) ($toolInput['k'] ?? 3)),
-            'build_dynamic_bundles' => $this->buildDynamicBundles($toolInput),
+            'build_dynamic_bundles' => $this->buildDynamicBundles($toolInput, $user),
             default => ['error' => 'unknown_tool', 'name' => $name],
         };
 
@@ -79,16 +90,166 @@ class ChatbotToolbox
      * @param  array<string, mixed>  $toolInput
      * @return array<string, mixed>
      */
-    private function search(array $toolInput): array
+    private function airportsForCity(array $toolInput): array
     {
-        return $this->searchLeg($toolInput, 1, 'full');
+        $city = trim((string) ($toolInput['city'] ?? ''));
+
+        if ($city === '') {
+            return ['error' => 'missing_city', 'message' => 'A city name is required.'];
+        }
+
+        $needle = '%'.mb_strtolower($city).'%';
+
+        $airports = Airport::query()
+            ->whereRaw('lower(city) like ?', [$needle])
+            ->orWhereRaw('lower(name) like ?', [$needle])
+            ->orderBy('iata_code')
+            ->get();
+
+        return [
+            'city' => $city,
+            'count' => $airports->count(),
+            'airports' => $airports
+                ->map(fn (Airport $airport): array => [
+                    'code' => $airport->iata_code,
+                    'name' => $airport->name,
+                    'city' => $airport->city,
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function listCustomizations(): array
+    {
+        return [
+            'customizations' => Service::query()
+                ->where('active', true)
+                ->with([
+                    'prices' => fn ($query) => $query
+                        ->where('active', true)
+                        ->orderBy('unit_price'),
+                    'constraints.relatedService:id,code,name',
+                ])
+                ->orderBy('category')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Service $service): array => [
+                    'code' => $service->code,
+                    'name' => $service->name,
+                    'category' => $service->category,
+                    'value_type' => $service->value_type,
+                    'default_unit' => $service->default_unit,
+                    'prices' => $service->prices
+                        ->map(fn (ServicePrice $price): array => [
+                            'currency' => $price->currency,
+                            'unit_price' => (float) $price->unit_price,
+                            'min_quantity' => $price->min_quantity,
+                            'max_quantity' => $price->max_quantity,
+                        ])
+                        ->values()
+                        ->all(),
+                    'constraints' => $service->constraints
+                        ->filter(fn (ServiceConstraint $constraint): bool => $constraint->active)
+                        ->map(fn (ServiceConstraint $constraint): array => [
+                            'type' => $constraint->type,
+                            'related_service_code' => $constraint->relatedService?->code,
+                            'message' => $constraint->message,
+                            'parameters' => $constraint->parameters,
+                        ])
+                        ->values()
+                        ->all(),
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function customerHistory(?User $user): array
+    {
+        if (! $user instanceof User) {
+            return [
+                'signed_in' => false,
+                'message' => 'No signed-in passenger profile is available.',
+                'tickets' => [],
+                'route_counts' => [],
+            ];
+        }
+
+        $tickets = Ticket::query()
+            ->whereHas('order', fn ($query) => $query->where('user_id', $user->id))
+            ->with(['offer.flight.originAirport', 'offer.flight.destinationAirport', 'offer.bundle', 'order'])
+            ->latest('issued_at')
+            ->latest()
+            ->limit(12)
+            ->get();
+
+        return [
+            'signed_in' => true,
+            'passenger' => [
+                'name' => $user->name,
+                'loyalty_tier' => $user->loyalty_tier,
+            ],
+            'tickets' => $tickets
+                ->map(fn (Ticket $ticket): array => [
+                    'ticket_number' => $ticket->ticket_number,
+                    'status' => $ticket->status,
+                    'issued_at' => $ticket->issued_at?->toDateString(),
+                    'route' => $ticket->offer->flight->originAirport->iata_code.'-'.$ticket->offer->flight->destinationAirport->iata_code,
+                    'date' => $ticket->offer->flight->departure_at->toDateString(),
+                    'package' => $ticket->offer->bundle->name,
+                    'total_usd' => (float) $ticket->offer->total_price,
+                ])
+                ->values()
+                ->all(),
+            'route_counts' => $tickets
+                ->groupBy(fn (Ticket $ticket): string => $ticket->offer->flight->originAirport->iata_code.'-'.$ticket->offer->flight->destinationAirport->iata_code)
+                ->map->count()
+                ->all(),
+        ];
     }
 
     /**
      * @param  array<string, mixed>  $toolInput
      * @return array<string, mixed>
      */
-    private function searchLeg(array $toolInput, int $legIndex, string $mode = 'full'): array
+    private function askFollowUp(array $toolInput): array
+    {
+        return [
+            'question' => (string) ($toolInput['question'] ?? 'Which services should be included or excluded?'),
+            'choices' => collect(is_array($toolInput['choices'] ?? null) ? $toolInput['choices'] : [])
+                ->filter(fn (mixed $choice): bool => is_array($choice))
+                ->map(fn (array $choice): array => [
+                    'label' => (string) ($choice['label'] ?? ''),
+                    'message' => (string) ($choice['message'] ?? ''),
+                ])
+                ->filter(fn (array $choice): bool => $choice['label'] !== '' && $choice['message'] !== '')
+                ->values()
+                ->all(),
+            'customizations' => $this->listCustomizations()['customizations'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $toolInput
+     * @return array<string, mixed>
+     */
+    private function search(array $toolInput, ?User $user): array
+    {
+        return $this->searchLeg($toolInput, 1, 'full', $user);
+    }
+
+    /**
+     * @param  array<string, mixed>  $toolInput
+     * @return array<string, mixed>
+     */
+    private function searchLeg(array $toolInput, int $legIndex, string $mode = 'full', ?User $user = null): array
     {
         $origin = $this->airport((string) $toolInput['origin']);
         $destination = $this->airport((string) $toolInput['destination']);
@@ -124,7 +285,7 @@ class ChatbotToolbox
                 $adults,
                 $children,
                 $babies,
-                null,
+                $user,
                 $legIndex,
             ),
             'flight_count' => count($flights),
@@ -140,37 +301,209 @@ class ChatbotToolbox
 
     /**
      * @param  array<string, mixed>  $toolInput
+     * @param  array<string, mixed>  $meta
      * @return array<string, mixed>
      */
-    private function quotePurchase(array $toolInput): array
+    private function presentOffers(array $toolInput, array $meta): array
     {
-        $offer = Offer::query()
-            ->with(['flight.originAirport', 'flight.destinationAirport', 'bundle', 'priceComponents'])
-            ->find((int) $toolInput['offer_id']);
+        $intro = isset($toolInput['intro']) && is_string($toolInput['intro'])
+            ? trim($toolInput['intro'])
+            : null;
 
-        if (! $offer instanceof Offer) {
-            return ['error' => 'not_found', 'message' => 'Offer not found.'];
+        $meta['intro'] = $intro;
+
+        $cards = collect(is_array($toolInput['offers'] ?? null) ? $toolInput['offers'] : [])
+            ->filter(fn (mixed $group): bool => is_array($group))
+            ->take(2)
+            ->map(fn (array $group): ?array => $this->offerCard($group, $meta))
+            ->filter(fn (?array $card): bool => is_array($card))
+            ->values()
+            ->all();
+
+        if ($cards === []) {
+            return ['error' => 'no_offers', 'message' => 'No valid offer ids were provided to present.'];
+        }
+
+        return [
+            'intro' => $intro,
+            'offers' => $cards,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $group
+     * @param  array<string, mixed>  $meta
+     * @return array<string, mixed>|null
+     */
+    private function offerCard(array $group, array $meta): ?array
+    {
+        $offerIds = collect(is_array($group['offer_ids'] ?? null) ? $group['offer_ids'] : [$group['offer_id'] ?? null])
+            ->filter(fn (mixed $offerId): bool => is_numeric($offerId))
+            ->map(fn (mixed $offerId): int => (int) $offerId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($offerIds === []) {
+            return null;
+        }
+
+        $memo = isset($group['memo']) ? trim((string) $group['memo']) : '';
+
+        $offers = Offer::query()
+            ->with([
+                'flight.originAirport',
+                'flight.destinationAirport',
+                'bundle.product',
+                'bookingClass.cabin',
+                'offerServices.service',
+                'priceComponents',
+            ])
+            ->whereKey($offerIds)
+            ->get()
+            ->sortBy('leg_index')
+            ->values();
+
+        if ($offers->isEmpty()) {
+            return null;
+        }
+
+        $primary = $offers->first();
+        $seatPassengers = max(1, (int) $primary->adults + (int) $primary->children);
+        $fare = $this->offerFare($primary, $seatPassengers);
+        $isCustom = $primary->offerServices->contains(fn ($offerService): bool => $offerService->source === 'customer');
+        $total = round((float) $offers->sum(fn (Offer $offer): float => (float) $offer->total_price), 2);
+
+        foreach ($offers as $offer) {
+            $context = is_array($offer->context) ? $offer->context : [];
+            $context['wingo'] = [
+                'memo' => $memo,
+                'intro' => $meta['intro'] ?? null,
+                'presented_at' => now()->toIso8601String(),
+                'session_id' => $meta['session_id'] ?? null,
+                'consent' => (bool) ($meta['consent'] ?? false),
+                'page' => $meta['page'] ?? null,
+                'offer_ids' => $offerIds,
+            ];
+            $offer->context = $context;
+            $offer->save();
+        }
+
+        return [
+            'offer_ids' => $offerIds,
+            'memo' => $memo,
+            'title' => $fare['product'] ?? $fare['class'] ?? 'Offer',
+            'class' => $fare['class'] ?? null,
+            'package_code' => $fare['package_code'] ?? null,
+            'is_custom' => $isCustom,
+            'is_round_trip' => $offers->count() > 1,
+            'total_price_usd' => $total,
+            'currency' => 'USD',
+            'passengers' => [
+                'adults' => (int) $primary->adults,
+                'children' => (int) $primary->children,
+                'babies' => (int) $primary->infants,
+            ],
+            'segments' => $offers->map(fn (Offer $offer): array => $this->offerSegment($offer))->all(),
+            'checked_baggage_kg' => $fare['checked_baggage_kg'] ?? 0,
+            'cabin_baggage_kg' => $fare['cabin_baggage_kg'] ?? 0,
+            'seat_selection_free' => $fare['seat_selection_free'] ?? false,
+            'change_fee_usd' => $fare['change_fee_usd'] ?? null,
+            'change_fee_percent' => $fare['change_fee_percent'] ?? null,
+            'refund_fee_usd' => $fare['refund_fee_usd'] ?? null,
+            'refund_fee_percent' => $fare['refund_fee_percent'] ?? null,
+            'latest_change_hours' => $fare['latest_change_hours'] ?? null,
+            'latest_refund_hours' => $fare['latest_refund_hours'] ?? null,
+            'services' => $fare['services'] ?? [],
+            'price_components' => $fare['price_components'] ?? [],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function offerSegment(Offer $offer): array
+    {
+        $flight = $offer->flight;
+
+        return [
+            'flight_number' => $flight->flight_number,
+            'origin' => $flight->originAirport->iata_code,
+            'destination' => $flight->destinationAirport->iata_code,
+            'date' => $flight->departure_at->toDateString(),
+            'hour' => $flight->departure_at->format('H:i'),
+            'arrival_hour' => $flight->arrival_at->format('H:i'),
+            'duration_str' => $this->durationLabel((int) $flight->duration_minutes),
+        ];
+    }
+
+    private function durationLabel(int $minutes): string
+    {
+        $hours = intdiv($minutes, 60);
+        $remaining = $minutes % 60;
+
+        return $remaining > 0 ? "{$hours}h {$remaining}m" : "{$hours}h";
+    }
+
+    /**
+     * @param  array<string, mixed>  $toolInput
+     * @return array<string, mixed>
+     */
+    private function quotePurchase(array $toolInput, ?User $user): array
+    {
+        $offerIds = collect(is_array($toolInput['offer_ids'] ?? null) ? $toolInput['offer_ids'] : [$toolInput['offer_id'] ?? null])
+            ->filter(fn (mixed $offerId): bool => is_numeric($offerId))
+            ->map(fn (mixed $offerId): int => (int) $offerId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($offerIds === []) {
+            return ['error' => 'missing_offer_ids', 'message' => 'At least one offer is required.'];
+        }
+
+        $offers = Offer::query()
+            ->with(['flight.originAirport', 'flight.destinationAirport', 'bundle', 'priceComponents'])
+            ->whereKey($offerIds)
+            ->get();
+
+        if ($offers->count() !== count($offerIds)) {
+            return ['error' => 'not_found', 'message' => 'One or more offers could not be found.'];
         }
 
         return [
             'status' => 'confirmation_required',
             'message' => 'This requires approval. Show the summary to the user and wait for explicit consent.',
-            'offer_id' => $offer->id,
-            'flight_number' => $offer->flight->flight_number,
-            'route' => $offer->flight->originAirport->iata_code.'-'.$offer->flight->destinationAirport->iata_code,
-            'date' => $offer->flight->departure_at->toDateString(),
-            'package' => $offer->bundle->name,
-            'total_usd' => (float) $offer->total_price,
-            'price_components' => $offer->priceComponents->map(fn ($component): array => [
-                'label' => $component->label,
-                'amount' => (float) $component->amount,
-            ])->all(),
+            'offer_id' => $offerIds[0],
+            'offer_ids' => $offerIds,
+            'trip_type' => $offers->first()->trip_type,
+            'segments' => $offers
+                ->sortBy('leg_index')
+                ->map(fn (Offer $offer): array => [
+                    'offer_id' => $offer->id,
+                    'flight_number' => $offer->flight->flight_number,
+                    'route' => $offer->flight->originAirport->iata_code.'-'.$offer->flight->destinationAirport->iata_code,
+                    'date' => $offer->flight->departure_at->toDateString(),
+                    'package' => $offer->bundle->name,
+                    'total_usd' => (float) $offer->total_price,
+                ])
+                ->values()
+                ->all(),
+            'total_usd' => (float) $offers->sum(fn (Offer $offer): float => (float) $offer->total_price),
+            'price_components' => $offers
+                ->flatMap(fn (Offer $offer) => $offer->priceComponents->map(fn ($component): array => [
+                    'label' => $component->label,
+                    'amount' => (float) $component->amount,
+                ]))
+                ->values()
+                ->all(),
             'pending_purchase' => [
-                'offer_ids' => [(int) $toolInput['offer_id']],
+                'offer_ids' => $offerIds,
                 'first_name' => (string) $toolInput['first_name'],
                 'last_name' => (string) $toolInput['last_name'],
                 'email' => $toolInput['email'] ?? null,
                 'passport_number' => $toolInput['passport_number'] ?? null,
+                'user_id' => $user?->id,
             ],
         ];
     }
@@ -196,6 +529,7 @@ class ChatbotToolbox
                 'last_name' => (string) ($pendingPurchase['last_name'] ?? ''),
                 'email' => isset($pendingPurchase['email']) ? (string) $pendingPurchase['email'] : null,
                 'passport_number' => isset($pendingPurchase['passport_number']) ? (string) $pendingPurchase['passport_number'] : null,
+                'user_id' => isset($pendingPurchase['user_id']) ? (int) $pendingPurchase['user_id'] : null,
             ]);
         } catch (ValidationException $exception) {
             return [
@@ -212,11 +546,11 @@ class ChatbotToolbox
      * @param  array<string, mixed>  $toolInput
      * @return array<string, mixed>
      */
-    private function buildDynamicBundles(array $toolInput): array
+    private function buildDynamicBundles(array $toolInput, ?User $user): array
     {
-        $search = $this->searchLeg($toolInput, 1, 'full');
+        $search = $this->searchLeg($toolInput, 1, 'full', $user);
         $flights = collect(is_array($search['flights'] ?? null) ? $search['flights'] : []);
-        $firstFlight = $flights->first();
+        $firstFlight = $this->flightForDemand($flights, $toolInput);
 
         if (! is_array($firstFlight)) {
             return ['error' => 'no_flights', 'message' => 'No flights found for this route/date.'];
@@ -234,11 +568,16 @@ class ChatbotToolbox
             ->filter(fn (mixed $serviceSpec): bool => is_array($serviceSpec) && is_string($serviceSpec['service_code'] ?? null))
             ->values()
             ->all();
+        $customMode = (bool) ($toolInput['custom_mode'] ?? false);
+
+        if ($customMode) {
+            $excludedServices = $this->customModeExcludedServices($preferredServices, $excludedServices, $serviceSpecs);
+        }
 
         $picks = collect(is_array($firstFlight['fares'] ?? null) ? $firstFlight['fares'] : [])
             ->filter(fn (array $fare): bool => ($fare['available'] ?? false) === true)
-            ->map(fn (array $fare): array => $this->customizeFareForDemand($fare, $toolInput, $preferredServices, $excludedServices, $serviceSpecs))
-            ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices, $serviceSpecs): int {
+            ->map(fn (array $fare): array => $this->customizeFareForDemand($fare, $toolInput, $preferredServices, $excludedServices, $serviceSpecs, $user))
+            ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices, $serviceSpecs, $customMode): int {
                 $firstExcludedCount = $this->includedExcludedServiceCount($firstFare, $excludedServices);
                 $secondExcludedCount = $this->includedExcludedServiceCount($secondFare, $excludedServices);
 
@@ -264,7 +603,9 @@ class ChatbotToolbox
                 $secondIsCustomized = ($secondFare['customized'] ?? false) === true;
 
                 if ($firstIsCustomized !== $secondIsCustomized) {
-                    return $firstIsCustomized <=> $secondIsCustomized;
+                    return $customMode
+                        ? ($firstIsCustomized ? -1 : 1)
+                        : ($firstIsCustomized <=> $secondIsCustomized);
                 }
 
                 return ((float) ($firstFare['base_price_usd'] ?? PHP_FLOAT_MAX))
@@ -283,8 +624,11 @@ class ChatbotToolbox
                 'origin' => (string) $toolInput['destination'],
                 'destination' => (string) $toolInput['origin'],
                 'date' => (string) $toolInput['return_date'],
-            ], 2, 'full');
-            $returnFlight = collect(is_array($returnSearch['flights'] ?? null) ? $returnSearch['flights'] : [])->first();
+            ], 2, 'full', $user);
+            $returnFlight = $this->flightForDemand(
+                collect(is_array($returnSearch['flights'] ?? null) ? $returnSearch['flights'] : []),
+                $toolInput,
+            );
 
             if (! is_array($returnFlight)) {
                 return ['error' => 'no_flights', 'message' => 'No return flights found for this route/date.'];
@@ -295,8 +639,8 @@ class ChatbotToolbox
                 ->map(fn (array $fare): array => $this->customizeFareForDemand($fare, [
                     ...$toolInput,
                     'date' => (string) $toolInput['return_date'],
-                ], $preferredServices, $excludedServices, $serviceSpecs))
-                ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices, $serviceSpecs): int {
+                ], $preferredServices, $excludedServices, $serviceSpecs, $user))
+                ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices, $serviceSpecs, $customMode): int {
                     $firstExcludedCount = $this->includedExcludedServiceCount($firstFare, $excludedServices);
                     $secondExcludedCount = $this->includedExcludedServiceCount($secondFare, $excludedServices);
 
@@ -322,7 +666,9 @@ class ChatbotToolbox
                     $secondIsCustomized = ($secondFare['customized'] ?? false) === true;
 
                     if ($firstIsCustomized !== $secondIsCustomized) {
-                        return $firstIsCustomized <=> $secondIsCustomized;
+                        return $customMode
+                            ? ($firstIsCustomized ? -1 : 1)
+                            : ($firstIsCustomized <=> $secondIsCustomized);
                     }
 
                     return ((float) ($firstFare['base_price_usd'] ?? PHP_FLOAT_MAX))
@@ -365,8 +711,75 @@ class ChatbotToolbox
             ],
             'passengers' => $search['passengers'],
             'seat_passengers' => $search['seat_passengers'],
+            'customization_options' => $this->listCustomizations()['customizations'],
             'recommended_picks' => $picks->values()->all(),
         ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $flights
+     * @param  array<string, mixed>  $toolInput
+     * @return array<string, mixed>|null
+     */
+    private function flightForDemand(Collection $flights, array $toolInput): ?array
+    {
+        if ($flights->isEmpty()) {
+            return null;
+        }
+
+        $flightNumber = strtoupper(trim((string) ($toolInput['flight_number'] ?? '')));
+
+        if ($flightNumber !== '') {
+            $matched = $flights->first(fn (array $flight): bool => strtoupper((string) ($flight['flight_number'] ?? '')) === $flightNumber);
+
+            if (is_array($matched)) {
+                return $matched;
+            }
+        }
+
+        $preference = (string) ($toolInput['departure_preference'] ?? '');
+
+        if ($preference === '') {
+            return $flights->first();
+        }
+
+        return $flights
+            ->sortBy(fn (array $flight): int => $this->departurePreferenceScore((string) ($flight['hour'] ?? ''), $preference))
+            ->first();
+    }
+
+    private function departurePreferenceScore(string $hour, string $preference): int
+    {
+        if (preg_match('/^(\d{2}):(\d{2})$/', $hour, $matches) !== 1) {
+            return PHP_INT_MAX;
+        }
+
+        $minutes = ((int) $matches[1] * 60) + (int) $matches[2];
+
+        return match ($preference) {
+            'overnight' => $this->distanceToWindow($minutes, 20 * 60, 6 * 60),
+            'morning' => $this->distanceToWindow($minutes, 6 * 60, 12 * 60),
+            'afternoon' => $this->distanceToWindow($minutes, 12 * 60, 17 * 60),
+            'evening' => $this->distanceToWindow($minutes, 17 * 60, 22 * 60),
+            default => 0,
+        };
+    }
+
+    private function distanceToWindow(int $minutes, int $start, int $end): int
+    {
+        if ($start <= $end) {
+            if ($minutes >= $start && $minutes <= $end) {
+                return 0;
+            }
+
+            return min(abs($minutes - $start), abs($minutes - $end));
+        }
+
+        if ($minutes >= $start || $minutes <= $end) {
+            return 0;
+        }
+
+        return min(abs($minutes - $start), abs($minutes - $end));
     }
 
     /**
@@ -377,7 +790,7 @@ class ChatbotToolbox
      * @param  array<int, array<string, mixed>>  $serviceSpecs
      * @return array<string, mixed>
      */
-    private function customizeFareForDemand(array $fare, array $toolInput, array $preferredServices, array $excludedServices, array $serviceSpecs): array
+    private function customizeFareForDemand(array $fare, array $toolInput, array $preferredServices, array $excludedServices, array $serviceSpecs, ?User $user): array
     {
         $selectedServices = $this->selectedServicesForDemand($fare, $preferredServices, $excludedServices, $serviceSpecs);
 
@@ -399,6 +812,7 @@ class ChatbotToolbox
                 adults: (int) ($toolInput['adults'] ?? 1),
                 children: (int) ($toolInput['children'] ?? 0),
                 infants: (int) ($toolInput['babies'] ?? 0),
+                user: $user,
                 selectedServices: $selectedServices,
             );
         } catch (Throwable) {
@@ -428,10 +842,6 @@ class ChatbotToolbox
         $selected = [];
 
         foreach ($excludedServices as $serviceCode) {
-            if (! $this->fareIncludesServiceCode($fare, $serviceCode)) {
-                continue;
-            }
-
             $selected[] = [
                 'service_code' => $serviceCode,
                 'value' => false,
@@ -472,6 +882,54 @@ class ChatbotToolbox
     }
 
     /**
+     * @param  array<int, string>  $preferredServices
+     * @param  array<int, string>  $excludedServices
+     * @param  array<int, array<string, mixed>>  $serviceSpecs
+     * @return array<int, string>
+     */
+    private function customModeExcludedServices(array $preferredServices, array $excludedServices, array $serviceSpecs): array
+    {
+        $requestedGroups = collect($preferredServices)
+            ->merge(collect($serviceSpecs)->pluck('service_code'))
+            ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
+            ->flatMap(fn (string $serviceCode): array => $this->serviceEquivalentCodes($serviceCode))
+            ->unique()
+            ->values()
+            ->all();
+
+        return collect($this->selectableServiceCodes())
+            ->reject(fn (string $serviceCode): bool => in_array($serviceCode, $requestedGroups, true))
+            ->merge($excludedServices)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function selectableServiceCodes(): array
+    {
+        return Service::query()
+            ->where('active', true)
+            ->orderBy('code')
+            ->pluck('code')
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function serviceEquivalentCodes(string $serviceCode): array
+    {
+        return match ($serviceCode) {
+            'CHECKED_BAG' => ['CHECKED_BAG', 'CABIN_BAG'],
+            'SEAT_SELECTION', 'SEAT_STANDARD', 'SEAT_EXIT_ROW' => ['SEAT_SELECTION', 'SEAT_STANDARD', 'SEAT_EXIT_ROW'],
+            default => [$serviceCode],
+        };
+    }
+
+    /**
      * @param  array<string, mixed>  $fare
      */
     private function fareIncludesServiceCode(array $fare, string $serviceCode): bool
@@ -487,9 +945,6 @@ class ChatbotToolbox
             'CABIN_BAG' => ['amount' => 8],
             'CHANGE_ALLOWED' => ['amount' => 24, 'allowed' => true, 'window_hours' => 24, 'fee_type' => 'fixed', 'fee_amount' => 55],
             'REFUNDABLE' => ['amount' => 24, 'allowed' => true, 'window_hours' => 24, 'fee_type' => 'percent', 'fee_amount' => 25],
-            'WIFI' => ['amount' => 250, 'data_mb' => 250],
-            'WIFI_1GB' => ['amount' => 1024, 'data_mb' => 1024],
-            'WIFI_5GB' => ['amount' => 5120, 'data_mb' => 5120],
             default => true,
         };
     }

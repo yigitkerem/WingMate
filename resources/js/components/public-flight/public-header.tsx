@@ -21,14 +21,14 @@ export function PublicHeader({ customer, onOpenChat }: PublicHeaderProps) {
         <header className="relative overflow-hidden bg-slate-950 text-white">
             <div
                 className="absolute inset-0 bg-cover bg-center opacity-75"
-                style={{ backgroundImage: "url('/assets/team_hero.jpg')" }}
+                style={{ backgroundImage: "url('/assets/herobg_tk.jpg')" }}
             />
             <div className="absolute inset-0 bg-linear-to-b from-black/45 via-black/10 to-black/40" />
 
             <div className="relative z-10">
                 <TopStrip />
                 <MainNav customer={customer} onOpenChat={onOpenChat} />
-                <HeroCopy />
+                <HeroCopy customer={customer} />
             </div>
         </header>
     );
@@ -66,18 +66,10 @@ function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-5 px-6 py-4">
             <Link href="/" className="flex min-w-0 items-center gap-3">
                 <img
-                    src="/assets/thy-emblem.svg"
-                    className="h-12 w-12 shrink-0 rounded-md bg-white object-contain p-1"
+                    src="/assets/oneliner_whitetext.svg"
+                    className="h-8 w-auto shrink-0 object-contain sm:h-10"
                     alt="Turkish Airlines logo"
                 />
-                <span className="min-w-0 leading-none">
-                    <span className="block font-display text-[23px] font-black tracking-normal">
-                        TURKISH AIRLINES
-                    </span>
-                    <span className="mt-1 block font-condensed text-[11px] font-bold tracking-[0.25em] text-white/70">
-                        WIDEN YOUR WORLD
-                    </span>
-                </span>
             </Link>
 
             <nav className="hidden items-center gap-6 text-[15px] font-bold text-white/90 lg:flex">
@@ -144,17 +136,19 @@ function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
     );
 }
 
-function HeroCopy() {
+function HeroCopy({ customer }: { customer: CustomerSummary }) {
     const { t } = useTranslation();
+    const firstName = customer.firstName.trim();
+    const title =
+        customer.isAuthenticated && firstName
+            ? t('public.heroTitleSignedIn').replace(':name', firstName)
+            : t('public.heroTitle');
 
     return (
         <div className="mx-auto max-w-6xl px-6 pt-24 pb-48">
             <h1 className="max-w-3xl font-display text-4xl leading-tight font-black tracking-normal text-white md:text-[54px]">
-                {t('public.heroTitle')}
+                {title}
             </h1>
-            <p className="mt-4 max-w-xl text-[15px] leading-6 font-medium text-white/90">
-                {t('public.heroCopy')}
-            </p>
         </div>
     );
 }

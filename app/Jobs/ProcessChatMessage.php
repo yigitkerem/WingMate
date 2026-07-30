@@ -17,12 +17,19 @@ class ProcessChatMessage implements ShouldQueue
 
     public int $timeout = 90;
 
+    /**
+     * @param  array<string, mixed>  $context
+     */
     public function __construct(
         public readonly string $sessionId,
         public readonly string $messageId,
         public readonly string $userText,
         public readonly string $source = 'ours',
         public readonly string $language = 'tr',
+        public readonly ?int $userId = null,
+        public readonly bool $consent = false,
+        public readonly ?string $trigger = null,
+        public readonly array $context = [],
     ) {}
 
     public function handle(ChatbotAgent $agent, ChatbotSessionStore $sessionStore): void
@@ -33,6 +40,10 @@ class ProcessChatMessage implements ShouldQueue
                 userText: $this->userText,
                 source: $this->source,
                 language: $this->language,
+                userId: $this->userId,
+                consent: $this->consent,
+                trigger: $this->trigger,
+                context: $this->context,
             );
 
             $sessionStore->putMessageResult(

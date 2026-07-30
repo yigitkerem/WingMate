@@ -1,10 +1,13 @@
 import {
     ArrowLeftRight,
+    Briefcase,
     CalendarDays,
     ChevronDown,
+    Clock,
     Minus,
     Plus,
     Search,
+    TicketCheck,
     Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -199,6 +202,20 @@ export function SearchCard({
 
 function ServiceTabs() {
     const { t } = useTranslation();
+    const serviceTabs = [
+        {
+            label: t('search.checkIn'),
+            icon: TicketCheck,
+        },
+        {
+            label: t('search.manageBooking'),
+            icon: Briefcase,
+        },
+        {
+            label: t('public.flightStatus'),
+            icon: Clock,
+        },
+    ];
 
     return (
         <div id="services" className="border-b border-slate-100">
@@ -207,18 +224,15 @@ function ServiceTabs() {
                     <Search className="size-4" />
                     {t('search.flightSearch')}
                 </span>
-                {[
-                    t('search.checkIn'),
-                    t('search.manageBooking'),
-                    t('public.flightStatus'),
-                ].map((item) => (
+                {serviceTabs.map(({ label, icon: Icon }) => (
                     <button
-                        key={item}
+                        key={label}
                         type="button"
                         className="inline-flex shrink-0 items-center gap-2 px-5 py-3.5 transition-colors hover:text-red-800"
                         title={t('search.comingSoon')}
                     >
-                        {item}
+                        <Icon className="size-4" />
+                        {label}
                     </button>
                 ))}
             </div>

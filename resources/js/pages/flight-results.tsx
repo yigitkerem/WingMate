@@ -3,7 +3,10 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { PurchaseModal } from '@/components/public-flight/purchase-modal';
-import { ResultsPanel } from '@/components/public-flight/results-panel';
+import {
+    ResultsPanel,
+    RoundTripSteps,
+} from '@/components/public-flight/results-panel';
 import type {
     RoundTripFareSelection,
     RoundTripStep,
@@ -15,6 +18,7 @@ import {
 import {
     formatShortDate,
     initializeSearchFilters,
+    publishWingoLaunch,
     publishWingoSearchPrefill,
     routeHeroImage,
     storeLastDestinationAirport,
@@ -179,6 +183,40 @@ export default function FlightResults({
         });
     }
 
+    function startCustomBundle(
+        flight: FlightResult,
+        cabin: 'economy' | 'business',
+    ) {
+        const prefill = {
+            origin: flight.origin.code,
+            destination: flight.destination.code,
+            date: flight.date,
+            tripType: form.trip_type,
+            returnDate:
+                form.trip_type === 'round_trip'
+                    ? form.return_date || undefined
+                    : undefined,
+            adults: form.adults,
+            children: form.children,
+            babies: form.babies,
+        };
+        publishWingoLaunch({
+            prefill,
+            trigger: 'custom_bundle',
+            triggerContext: {
+                flight_number: flight.flight_number,
+                cabin,
+                origin: flight.origin.code,
+                destination: flight.destination.code,
+                date: flight.date,
+                hour: flight.hour,
+                adults: form.adults,
+                children: form.children,
+                babies: form.babies,
+            },
+        });
+    }
+
     function changeRoundTripStep(step: RoundTripStep) {
         if (step === 'return' && !roundTripSelection.outbound) {
             return;
@@ -196,7 +234,11 @@ export default function FlightResults({
                     destinationCode={destinationCode}
                     destinationName={destinationName}
                     locale={locale}
+                    roundTripSelection={roundTripSelection}
+                    roundTripStep={roundTripStep}
+                    showRoundTripSteps={Boolean(results?.return.length)}
                     tripContext={tripContext}
+                    onRoundTripStepChange={changeRoundTripStep}
                 >
                     <SearchCard
                         airports={airports}
@@ -215,9 +257,8 @@ export default function FlightResults({
                     <ResultsPanel
                         results={results}
                         onPurchase={startPurchase}
+                        onCustomBundle={startCustomBundle}
                         roundTripStep={roundTripStep}
-                        roundTripSelection={roundTripSelection}
-                        onRoundTripStepChange={changeRoundTripStep}
                         className="px-0 pb-12"
                     />
                 </div>
@@ -243,33 +284,45 @@ function ResultsHero({
     destinationCode,
     destinationName,
     locale,
+    roundTripSelection,
+    roundTripStep,
+    showRoundTripSteps,
     tripContext,
+    onRoundTripStepChange,
 }: {
     children: ReactNode;
     customer: CustomerSummary;
     destinationCode?: string;
     destinationName: string;
     locale: 'en' | 'tr';
+    roundTripSelection: {
+        outbound?: RoundTripFareSelection;
+        return?: RoundTripFareSelection;
+    };
+    roundTripStep: RoundTripStep;
+    showRoundTripSteps: boolean;
     tripContext: string;
+    onRoundTripStepChange: (step: RoundTripStep) => void;
 }) {
     const { t } = useTranslation();
 
     return (
         <section className="border-b border-slate-200 bg-white">
             <ResultsMenuBar customer={customer} />
-            <div className="mx-auto grid max-w-6xl gap-5 px-4 py-6 sm:px-6">
-                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
-                    <div className="min-w-0 opacity-100 transition-all duration-500 starting:opacity-0 motion-safe:starting:translate-y-2">
-                        <h1 className="font-display text-2xl font-semibold tracking-normal text-slate-950 sm:text-3xl">
-                            {resultsTitle(destinationName, locale, t)}
-                        </h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 font-medium text-slate-600">
-                            {tripContext}
-                        </p>
-                    </div>
+            <div className="mx-auto grid max-w-6xl gap-5 px-4 py-6 sm:px-6 lg:py-7">
+                {showRoundTripSteps && (
+                    <RoundTripSteps
+                        activeStep={roundTripStep}
+                        selection={roundTripSelection}
+                        onStepChange={onRoundTripStepChange}
+                    />
+                )}
+                <div className="opacity-100 transition-all duration-500 starting:opacity-0 motion-safe:starting:translate-y-2">
                     <DestinationImageCard
                         destinationCode={destinationCode}
                         destinationName={destinationName}
+                        title={resultsTitle(destinationName, locale, t)}
+                        tripContext={tripContext}
                     />
                 </div>
                 <div className="min-w-0 opacity-100 transition-all delay-100 duration-500 starting:opacity-0 motion-safe:starting:translate-y-2">
@@ -283,17 +336,30 @@ function ResultsHero({
 function DestinationImageCard({
     destinationCode,
     destinationName,
+    title,
+    tripContext,
 }: {
     destinationCode?: string;
     destinationName: string;
+    title: string;
+    tripContext: string;
 }) {
     return (
-        <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-100 opacity-100 shadow-sm transition-all delay-75 duration-500 starting:opacity-0 motion-safe:starting:translate-y-2">
+        <div className="relative min-h-[240px] overflow-hidden rounded-md bg-slate-100 opacity-100 shadow-[0_14px_34px_-28px_rgba(15,23,42,0.45)] transition-all delay-75 duration-500 lg:min-h-[300px] starting:opacity-0 motion-safe:starting:translate-y-2">
             <img
                 src={routeHeroImage(destinationCode)}
                 alt={destinationName}
-                className="aspect-3/1 w-full object-cover transition-transform duration-500 hover:scale-[1.02] lg:aspect-16/9"
+                className="absolute inset-0 size-full object-cover transition-transform duration-500 hover:scale-[1.025]"
             />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/82 via-slate-950/28 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 p-5 text-white sm:p-6">
+                <h1 className="font-display text-3xl leading-tight font-semibold tracking-normal sm:text-4xl">
+                    {title}
+                </h1>
+                <p className="mt-2 max-w-xl text-sm leading-6 font-semibold text-white/90">
+                    {tripContext}
+                </p>
+            </div>
         </div>
     );
 }
@@ -302,36 +368,31 @@ function ResultsMenuBar({ customer }: { customer: CustomerSummary }) {
     const { t } = useTranslation();
 
     return (
-        <div className="relative z-40 border-b border-slate-200 bg-white">
+        <div className="relative z-40 border-b border-thy-navy bg-thy-navy">
             <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
                 <Link href="/" className="flex min-w-0 items-center gap-3">
                     <img
-                        src="/assets/thy-emblem.svg"
-                        className="size-10 shrink-0 object-contain"
+                        src="/assets/oneliner_whitetext.svg"
+                        className="h-7 w-auto shrink-0 object-contain sm:h-8"
                         alt="Turkish Airlines logo"
                     />
-                    <span className="min-w-0 leading-none">
-                        <span className="block truncate font-display text-lg font-semibold whitespace-nowrap text-slate-950">
-                            TURKISH AIRLINES
-                        </span>
-                    </span>
                 </Link>
 
-                <nav className="hidden items-center gap-5 text-sm font-medium text-slate-600 md:flex">
-                    <Link className="hover:text-red-800" href="/">
+                <nav className="hidden items-center gap-5 text-sm font-medium text-white/80 md:flex">
+                    <Link className="hover:text-white" href="/">
                         {t('results.book')}
                     </Link>
-                    <a className="hover:text-red-800" href="#results">
+                    <a className="hover:text-white" href="#results">
                         {t('results.results')}
                     </a>
                 </nav>
 
                 <div className="flex shrink-0 items-center gap-2">
-                    <LanguageSwitcher />
+                    <LanguageSwitcher variant="light" />
                     {customer.isAuthenticated ? (
                         <Link
                             href={dashboard()}
-                            className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700 transition-colors hover:border-red-200 hover:text-red-800"
+                            className="inline-flex h-9 items-center rounded-md border border-white/35 px-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-thy-navy"
                         >
                             {t('app.dashboard')}
                         </Link>
@@ -339,7 +400,7 @@ function ResultsMenuBar({ customer }: { customer: CustomerSummary }) {
                         <>
                             <Link
                                 href={register()}
-                                className="hidden h-9 items-center rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700 transition-colors hover:border-red-200 hover:text-red-800 sm:inline-flex"
+                                className="hidden h-9 items-center rounded-md border border-white/35 px-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-thy-navy sm:inline-flex"
                             >
                                 {t('public.join')}
                             </Link>

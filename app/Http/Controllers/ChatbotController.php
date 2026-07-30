@@ -18,9 +18,13 @@ class ChatbotController extends Controller
         ProcessChatMessage::dispatch(
             sessionId: (string) $validated['session_id'],
             messageId: $messageId,
-            userText: (string) $validated['message'],
+            userText: (string) ($validated['message'] ?? ''),
             source: (string) ($validated['source'] ?? 'ours'),
             language: (string) ($validated['language'] ?? 'tr'),
+            userId: $request->user()?->id,
+            consent: (bool) ($validated['consent'] ?? false),
+            trigger: isset($validated['trigger']) ? (string) $validated['trigger'] : null,
+            context: is_array($validated['context'] ?? null) ? $validated['context'] : [],
         );
 
         return response()->json([

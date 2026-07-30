@@ -3,19 +3,27 @@ import type Pusher from 'pusher-js';
 import type { Auth } from '@/types/auth';
 
 declare global {
+    type BrowserSpeechRecognitionResult = ArrayLike<{ transcript: string }> & {
+        isFinal: boolean;
+    };
+
+    type BrowserSpeechRecognitionEvent = {
+        resultIndex: number;
+        results: ArrayLike<BrowserSpeechRecognitionResult>;
+    };
+
     type BrowserSpeechRecognition = {
         lang: string;
         interimResults: boolean;
+        continuous: boolean;
         maxAlternatives: number;
         onstart: (() => void) | null;
         onend: (() => void) | null;
         onerror: (() => void) | null;
-        onresult:
-            | ((event: {
-                  results: ArrayLike<ArrayLike<{ transcript: string }>>;
-              }) => void)
-            | null;
+        onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
         start: () => void;
+        stop: () => void;
+        abort: () => void;
     };
 
     type BrowserSpeechRecognitionConstructor =

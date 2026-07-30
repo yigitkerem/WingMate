@@ -25,18 +25,10 @@ export default function AuthSimpleLayout({
                 <div className="relative z-10 flex min-h-svh flex-col justify-between p-10">
                     <Link href={home()} className="flex items-center gap-3">
                         <img
-                            src="/assets/thy-emblem.svg"
-                            className="h-12 w-12 rounded-md bg-white object-contain p-1"
+                            src="/assets/oneliner_whitetext.svg"
+                            className="h-10 w-auto object-contain"
                             alt="Turkish Airlines logo"
                         />
-                        <span className="leading-none">
-                            <span className="block font-display text-[22px] font-black tracking-normal">
-                                TURKISH AIRLINES
-                            </span>
-                            <span className="mt-1 block font-condensed text-[11px] font-bold tracking-[0.25em] text-white/70">
-                                WIDEN YOUR WORLD
-                            </span>
-                        </span>
                     </Link>
 
                     <div className="max-w-xl pb-10">
@@ -77,18 +69,10 @@ export default function AuthSimpleLayout({
                         className="mb-8 flex items-center gap-3 lg:hidden"
                     >
                         <img
-                            src="/assets/thy-emblem.svg"
-                            className="h-11 w-11 rounded-md bg-white object-contain p-1 shadow-sm ring-1 ring-slate-200"
+                            src="/assets/oneliner_blacktext.svg"
+                            className="h-9 w-auto object-contain"
                             alt="Turkish Airlines logo"
                         />
-                        <span className="leading-none">
-                            <span className="block font-display text-lg font-black tracking-normal">
-                                TURKISH AIRLINES
-                            </span>
-                            <span className="mt-1 block font-condensed text-[10px] font-bold tracking-[0.2em] text-slate-500">
-                                WIDEN YOUR WORLD
-                            </span>
-                        </span>
                     </Link>
 
                     <div className="mb-7 space-y-2">

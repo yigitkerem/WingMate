@@ -23,9 +23,8 @@ const translations = {
         'public.flightStatus': 'Flight Status',
         'public.join': 'Join',
         'public.login': 'Log in',
-        'public.heroTitle': 'Widen Your World',
-        'public.heroCopy':
-            'Flights to more than 300 destinations, clear fare choices, and Wingo guidance when you want help choosing.',
+        'public.heroTitle': 'Where would you like to explore?',
+        'public.heroTitleSignedIn': 'Where would you like to explore, :name?',
         'search.from': 'From',
         'search.to': 'To',
         'search.chooseDeparture': 'Choose departure',
@@ -65,7 +64,8 @@ const translations = {
         'results.book': 'Book',
         'results.results': 'Results',
         'results.destination': 'Destination',
-        'results.noFlights': 'No sellable flights found for this route and date.',
+        'results.noFlights':
+            'No sellable flights found for this route and date.',
         'results.noReturnFlights':
             'No sellable return flights found for this route and date.',
         'results.noStepFlights':
@@ -97,6 +97,12 @@ const translations = {
         'results.refundHelper': 'Refund allowance',
         'results.package': 'package',
         'results.farePackage': 'Fare package',
+        'results.customBundlePrompt':
+            'Do you want a custom bundle? Let’s make it real with Wingo.',
+        'results.customBundleHelper':
+            'Wingo will ask what to include or exclude, then build a saved custom offer.',
+        'results.customBundleButton': 'Make it with Wingo',
+        'results.customBundleChoice': 'You choose',
         'results.choosePackage': 'Choose package',
         'results.select': 'Select',
         'results.leftAtPrice': 'left at this price',
@@ -105,25 +111,15 @@ const translations = {
         'purchase.roundTrip': 'Round trip',
         'purchase.seatedPassengers': 'Seated passengers',
         'purchase.selectedOffers': 'Selected offers',
-        'features.dynamicPricing': 'Dynamic pricing',
-        'features.dynamicPricingDesc':
-            'Departure timing, availability, and fare family rules are reflected in each search.',
-        'features.roundTrip': 'Round-trip advantage',
-        'features.roundTripDesc':
-            'Round-trip searches can surface fare families that are not available as separate one-way tickets.',
-        'features.aiPackaging': 'AI-ready packaging',
-        'features.aiPackagingDesc':
-            'Wingo can build personalized bundles from available fares and selectable ancillary products.',
-        'features.assistant': 'Travel assistant',
-        'features.assistantDesc':
-            'Ask natural-language questions in the side panel and get grounded answers from flight and policy tools.',
         'footer.demo':
             'Dynamic Pricer demo. Turkish Airlines-inspired public interface.',
         'footer.links': 'Privacy Policy · Terms of Use · Contact',
         'chat.open': 'Open Wingo chat',
         'chat.close': 'Close Wingo chat',
         'chat.welcome':
-            'Hi, I’m Wingo. Tell me where and when you want to fly, or ask about bags, changes, refunds, passenger rights, and booking. I’ll ask the key questions first, then show the most relevant choices.',
+            'Hi, I’m Wingo. Tell me where and when you want to fly, ask about travel rules, or describe the trip you want. I’ll ask the key questions first, then show the most relevant choices.',
+        'chat.welcomeNamed':
+            'Hi :name, I’m Wingo. Tell me where and when you want to fly, ask about travel rules, or describe the trip you want. I’ll ask the key questions first, then show the most relevant choices.',
         'chat.pending': 'Checking fares and rules...',
         'chat.waiting':
             'I am still waiting on the fare assistant. Please try again.',
@@ -133,10 +129,31 @@ const translations = {
         'chat.listening': 'Listening',
         'chat.voiceInput': 'Start voice input',
         'chat.disclaimer':
-            'Recommendations are curated from available package inventory. Purchases require an explicit quote confirmation.',
+            'Your messages aren’t stored. Offers you’re shown may be saved anonymously to improve recommendations.',
+        'chat.consent.title': 'Before we start',
+        'chat.consent.body':
+            'To give you tailored quotes, Wingo shares details such as your name, flight history and approximate location with AI model partners. Your messages are not stored, but the offers you are shown may be saved for analytics.',
+        'chat.consent.location':
+            'With your permission, Wingo uses your current location only to suggest nearby airports. You can decline and still be asked to confirm everything.',
+        'chat.consent.accept': 'I agree, continue',
+        'chat.consent.decline': 'Not now',
+        'chat.consent.declined':
+            'Wingo needs your consent to help with personalized quotes. Tap “I agree” to continue.',
+        'chat.selectOption': 'Choose an option above to continue.',
+        'chat.typeOwn': 'Type my own answer',
+        'chat.feat.checkedBag': 'Checked bag',
+        'chat.feat.cabinBag': 'Cabin bag',
+        'chat.feat.seat': 'Seat selection',
+        'chat.feat.changes': 'Changes',
+        'chat.feat.refunds': 'Refunds',
+        'chat.val.notIncluded': 'Not included',
+        'chat.val.included': 'Included',
+        'chat.val.standard': 'Standard',
+        'chat.val.exitRow': 'Exit row',
         'chat.expand': 'Expand Wingo to fill the window',
         'chat.shrink': 'Shrink Wingo back to panel size',
         'chat.custom': 'Wingo custom',
+        'chat.customizations': 'Customizable services',
         'chat.flight': 'Flight',
         'chat.total': 'Total',
         'chat.book': 'Book',
@@ -148,6 +165,10 @@ const translations = {
         'chat.value': 'Value',
         'chat.source': 'Source',
         'chat.featureTable': 'Offer feature table',
+        'chat.compareOffers': 'Compare offers',
+        'chat.offerComparison': 'Offer comparison',
+        'chat.notAvailable': 'Not available',
+        'chat.forYou': 'For you',
         'chat.seated': 'Seated',
         'chat.offers': 'Offers',
         'chat.firstName': 'First name',
@@ -156,7 +177,7 @@ const translations = {
         'chat.passportNumber': 'Passport number',
         'chat.confirmPurchase': 'Confirm purchase',
         'chat.suggestions.help': 'Help me choose a flight.',
-        'chat.suggestions.flexibility': 'I care most about flexibility.',
+        'chat.suggestions.flexibility': 'I want a more tailored offer.',
         'chat.suggestions.airports': 'Which airports can I search?',
         'chat.suggestions.cancelled': 'What happens if my flight is cancelled?',
         'dashboard.title': 'Dashboard',
@@ -242,9 +263,8 @@ const translations = {
         'public.flightStatus': 'Uçuş Durumu',
         'public.join': 'Üye ol',
         'public.login': 'Giriş yap',
-        'public.heroTitle': 'Dünyanı Genişlet',
-        'public.heroCopy':
-            '300’den fazla noktaya uçuş, net ücret seçenekleri ve seçim yaparken Wingo rehberliği.',
+        'public.heroTitle': 'Nereyi keşfetmek istersiniz?',
+        'public.heroTitleSignedIn': 'Nereyi keşfetmek istersin, :name?',
         'search.from': 'Nereden',
         'search.to': 'Nereye',
         'search.chooseDeparture': 'Kalkış seç',
@@ -284,7 +304,8 @@ const translations = {
         'results.book': 'Rezervasyon',
         'results.results': 'Sonuçlar',
         'results.destination': 'Varış noktası',
-        'results.noFlights': 'Bu rota ve tarih için satılabilir uçuş bulunamadı.',
+        'results.noFlights':
+            'Bu rota ve tarih için satılabilir uçuş bulunamadı.',
         'results.noReturnFlights':
             'Bu rota ve tarih için satılabilir dönüş uçuşu bulunamadı.',
         'results.noStepFlights':
@@ -315,6 +336,12 @@ const translations = {
         'results.refundHelper': 'İade hakkı',
         'results.package': 'paketi',
         'results.farePackage': 'Ücret paketi',
+        'results.customBundlePrompt':
+            'Özel paket ister misiniz? Wingo ile gerçeğe dönüştürelim.',
+        'results.customBundleHelper':
+            'Wingo nelerin dahil olup olmayacağını sorar, sonra kayıtlı özel teklif oluşturur.',
+        'results.customBundleButton': 'Wingo ile oluştur',
+        'results.customBundleChoice': 'Siz seçersiniz',
         'results.choosePackage': 'Paket seç',
         'results.select': 'Seç',
         'results.leftAtPrice': 'bu fiyatta kaldı',
@@ -323,25 +350,15 @@ const translations = {
         'purchase.roundTrip': 'Gidiş dönüş',
         'purchase.seatedPassengers': 'Koltuklu yolcular',
         'purchase.selectedOffers': 'Seçilen teklifler',
-        'features.dynamicPricing': 'Dinamik fiyatlama',
-        'features.dynamicPricingDesc':
-            'Kalkış zamanı, müsaitlik ve ücret ailesi kuralları her aramaya yansıtılır.',
-        'features.roundTrip': 'Gidiş dönüş avantajı',
-        'features.roundTripDesc':
-            'Gidiş dönüş aramaları ayrı tek yön biletlerde bulunmayan ücret ailelerini gösterebilir.',
-        'features.aiPackaging': 'AI destekli paketleme',
-        'features.aiPackagingDesc':
-            'Wingo mevcut ücretlerden ve seçilebilir ek hizmetlerden kişiselleştirilmiş paketler oluşturabilir.',
-        'features.assistant': 'Seyahat asistanı',
-        'features.assistantDesc':
-            'Yan panelden doğal dilde sorular sorun, uçuş ve politika araçlarından temelli yanıtlar alın.',
         'footer.demo':
             'Dynamic Pricer demosu. Turkish Airlines esintili halka açık arayüz.',
         'footer.links': 'Gizlilik Politikası · Kullanım Şartları · İletişim',
         'chat.open': 'Wingo sohbetini aç',
         'chat.close': 'Wingo sohbetini kapat',
         'chat.welcome':
-            'Merhaba, ben Wingo. Nereye ve ne zaman uçmak istediğini söyle ya da bagaj, değişiklik, iade, yolcu hakları ve rezervasyon hakkında sor. Önce gerekli soruları sorar, sonra en ilgili seçenekleri gösteririm.',
+            'Merhaba, ben Wingo. Nereye ve ne zaman uçmak istediğini söyle, seyahat kurallarını sor ya da istediğin yolculuğu tarif et. Önce gerekli soruları sorar, sonra en ilgili seçenekleri gösteririm.',
+        'chat.welcomeNamed':
+            'Merhaba :name, ben Wingo. Nereye ve ne zaman uçmak istediğini söyle, seyahat kurallarını sor ya da istediğin yolculuğu tarif et. Önce gerekli soruları sorar, sonra en ilgili seçenekleri gösteririm.',
         'chat.pending': 'Ücretler ve kurallar kontrol ediliyor...',
         'chat.waiting':
             'Ücret asistanından hâlâ yanıt bekliyorum. Lütfen tekrar deneyin.',
@@ -351,10 +368,31 @@ const translations = {
         'chat.listening': 'Dinleniyor',
         'chat.voiceInput': 'Sesli girişi başlat',
         'chat.disclaimer':
-            'Öneriler mevcut paket envanterinden derlenir. Satın alma için açık fiyat onayı gerekir.',
+            'Mesajlarınız saklanmaz. Gördüğünüz teklifler önerileri geliştirmek için anonim olarak kaydedilebilir.',
+        'chat.consent.title': 'Başlamadan önce',
+        'chat.consent.body':
+            'Size özel teklifler sunabilmek için Wingo; adınız, uçuş geçmişiniz ve yaklaşık konumunuz gibi bilgileri yapay zeka model iş ortaklarıyla paylaşır. Mesajlarınız saklanmaz, ancak size gösterilen teklifler analiz amacıyla kaydedilebilir.',
+        'chat.consent.location':
+            'İzniniz olursa Wingo, yalnızca yakın havalimanlarını önermek için mevcut konumunuzu kullanır. Reddedebilirsiniz; bu durumda her şeyi onaylamanız istenir.',
+        'chat.consent.accept': 'Kabul ediyorum, devam et',
+        'chat.consent.decline': 'Şimdi değil',
+        'chat.consent.declined':
+            'Wingo’nun size özel teklifler sunabilmesi için onayınız gerekiyor. Devam etmek için “Kabul ediyorum”a dokunun.',
+        'chat.selectOption': 'Devam etmek için yukarıdan bir seçenek seçin.',
+        'chat.typeOwn': 'Kendi yanıtımı yazayım',
+        'chat.feat.checkedBag': 'Kayıtlı bagaj',
+        'chat.feat.cabinBag': 'Kabin bagajı',
+        'chat.feat.seat': 'Koltuk seçimi',
+        'chat.feat.changes': 'Değişiklikler',
+        'chat.feat.refunds': 'İadeler',
+        'chat.val.notIncluded': 'Dahil değil',
+        'chat.val.included': 'Dahil',
+        'chat.val.standard': 'Standart',
+        'chat.val.exitRow': 'Acil çıkış sırası',
         'chat.expand': 'Wingo’yu pencereye genişlet',
         'chat.shrink': 'Wingo’yu panel boyutuna küçült',
         'chat.custom': 'Wingo özel',
+        'chat.customizations': 'Özelleştirilebilir hizmetler',
         'chat.flight': 'Uçuş',
         'chat.total': 'Toplam',
         'chat.book': 'Satın al',
@@ -366,6 +404,10 @@ const translations = {
         'chat.value': 'Değer',
         'chat.source': 'Kaynak',
         'chat.featureTable': 'Teklif özellik tablosu',
+        'chat.compareOffers': 'Teklifleri karşılaştır',
+        'chat.offerComparison': 'Teklif karşılaştırması',
+        'chat.notAvailable': 'Yok',
+        'chat.forYou': 'For you',
         'chat.seated': 'Koltuklu',
         'chat.offers': 'Teklifler',
         'chat.firstName': 'Ad',
@@ -374,7 +416,7 @@ const translations = {
         'chat.passportNumber': 'Pasaport numarası',
         'chat.confirmPurchase': 'Satın almayı onayla',
         'chat.suggestions.help': 'Uçuş seçmeme yardım et.',
-        'chat.suggestions.flexibility': 'Benim için esneklik önemli.',
+        'chat.suggestions.flexibility': 'Daha kişisel bir teklif istiyorum.',
         'chat.suggestions.airports': 'Hangi havalimanlarını arayabilirim?',
         'chat.suggestions.cancelled': 'Uçuşum iptal olursa ne olur?',
         'dashboard.title': 'Panel',

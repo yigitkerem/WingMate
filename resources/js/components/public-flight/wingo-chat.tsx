@@ -1,28 +1,30 @@
 import { router, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
-    CalendarRange,
     ChevronDown,
-    CircleCheck,
-    CircleDollarSign,
     Clock,
-    Luggage,
     Maximize2,
     Mic,
     Minimize2,
     Send,
+    ShieldCheck,
     X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import {
     formatShortDate,
     readStoredWingoSearchPrefill,
+    wingoLaunchEvent,
     wingoSearchPrefillEvent,
 } from '@/lib/flight-search';
+import type {
+    WingoLaunchDetail,
+    WingoSearchPrefill,
+    WingoTriggerContext,
+} from '@/lib/flight-search';
 import { useTranslation } from '@/lib/i18n';
-import type { Locale } from '@/lib/i18n';
-import type { WingoSearchPrefill } from '@/lib/flight-search';
+import type { Locale, TranslationKey } from '@/lib/i18n';
 import type { CustomerSummary } from '@/types/flight-search';
 
 type ChatMessage = {
@@ -43,30 +45,16 @@ type GuidedChoice = {
     message: string;
 };
 
+type FollowUp = {
+    question: string;
+    choices: GuidedChoice[];
+};
+
 type ChatbotMessageReadyEvent = {
     message_id: string;
     reply: string;
     failed: boolean;
     tool_trace: ToolTrace[];
-};
-
-type FlightCard = {
-    key: string;
-    badge: string;
-    title: string;
-    price: string;
-    totalPrice: number;
-    offerIds: number[];
-    passengers: PassengerCounts;
-    route?: string;
-    segments: FlightSegment[];
-    details: string[];
-    featureRows: FeatureRow[];
-    packageCode?: string;
-    classLetters?: string;
-    isPrivate?: boolean;
-    isCustom?: boolean;
-    highlightPills: string[];
 };
 
 type FlightSegment = {
@@ -88,10 +76,27 @@ type PassengerCounts = {
 type FeatureRow = {
     label: string;
     value: string;
-    source: string;
 };
 
-type CheckoutTarget = FlightCard;
+type OfferCard = {
+    key: string;
+    offerIds: number[];
+    memo: string;
+    title: string;
+    price: string;
+    totalPrice: number;
+    isCustom: boolean;
+    isRoundTrip: boolean;
+    passengers: PassengerCounts;
+    segments: FlightSegment[];
+    route?: string;
+    raw: Record<string, unknown>;
+};
+
+type GeoLocation = {
+    lat: number;
+    lng: number;
+};
 
 type ChatbotMessageStatusEvent =
     | (ChatbotMessageReadyEvent & { status: 'ready' })
@@ -105,6 +110,7 @@ type WingoChatProps = {
 
 const replyPollDelayMs = 1200;
 const replyPollMaxAttempts = 35;
+const consentStorageKey = 'wingo-consent';
 
 function randomId() {
     return (
@@ -132,6 +138,14 @@ function storedSessionId() {
     window.localStorage.setItem(key, next);
 
     return next;
+}
+
+function storedConsent(): boolean {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    return window.localStorage.getItem(consentStorageKey) === 'yes';
 }
 
 function replyStatusUrl(chatSessionId: string, messageId: string) {
@@ -183,80 +197,11 @@ function numberList(value: unknown): number[] {
         : [];
 }
 
-function stringList(value: unknown): string[] {
-    return Array.isArray(value)
-        ? value.filter(
-              (item): item is string =>
-                  typeof item === 'string' && item.trim() !== '',
-          )
-        : [];
-}
-
-function serviceValueLabel(value: unknown): string {
-    if (isRecord(value)) {
-        if (value.allowed === true && typeof value.window_hours === 'number') {
-            const feeAmount = numberValue(value.fee_amount) ?? 0;
-            const feeType = textValue(value.fee_type);
-            const fee =
-                feeType === 'percent'
-                    ? `${feeAmount}% fee`
-                    : feeAmount === 0
-                      ? 'No fee'
-                      : `$${feeAmount} fee`;
-
-            return `${fee} until ${value.window_hours}h`;
-        }
-
-        if (value.unlimited === true) {
-            return 'Unlimited';
-        }
-
-        if (typeof value.data_mb === 'number') {
-            return value.data_mb >= 1024
-                ? `${Math.round(value.data_mb / 1024)} GB`
-                : `${value.data_mb} MB`;
-        }
-
-        if (typeof value.seat_type === 'string') {
-            return value.seat_type === 'exit_row' ? 'Exit row' : 'Standard';
-        }
-
-        const amount = value.amount;
-
-        if (amount === null || amount === false || amount === 0) {
-            return 'Not included';
-        }
-
-        if (typeof amount === 'number' || typeof amount === 'string') {
-            return String(amount);
-        }
-
-        return Object.values(value).filter(Boolean).join(', ') || 'Included';
-    }
-
-    if (typeof value === 'boolean') {
-        return value ? 'Yes' : 'No';
-    }
-
-    if (typeof value === 'number') {
-        return String(value);
-    }
-
-    return textValue(value) ?? 'Included';
-}
-
-function sourceLabel(value: unknown): string {
-    const source = textValue(value);
-
-    if (source === 'customer') {
-        return 'Custom choice';
-    }
-
-    if (source === 'rule') {
-        return 'Rule benefit';
-    }
-
-    return 'Package';
+function serviceByCode(
+    services: Record<string, unknown>[],
+    code: string,
+): Record<string, unknown> | undefined {
+    return services.find((service) => textValue(service.code) === code);
 }
 
 function serviceIsEnabled(service?: Record<string, unknown>): boolean {
@@ -297,26 +242,6 @@ function serviceIsEnabled(service?: Record<string, unknown>): boolean {
     return textValue(value) !== undefined;
 }
 
-function serviceByCode(
-    services: Record<string, unknown>[],
-    code: string,
-): Record<string, unknown> | undefined {
-    return services.find((service) => textValue(service.code) === code);
-}
-
-function serviceSource(
-    services: Record<string, unknown>[],
-    code: string,
-): string {
-    const service = serviceByCode(services, code);
-
-    if (!service) {
-        return 'Not included';
-    }
-
-    return sourceLabel(service.source);
-}
-
 function serviceAmount(
     services: Record<string, unknown>[],
     code: string,
@@ -336,101 +261,6 @@ function serviceAmount(
     return numberValue(value) ?? 0;
 }
 
-function featureRowsFromFare(fare: Record<string, unknown>): FeatureRow[] {
-    const services = asRecords(fare.services);
-    const checkedBag =
-        numberValue(fare.checked_baggage_kg) ??
-        serviceAmount(services, 'CHECKED_BAG');
-    const cabinBag =
-        numberValue(fare.cabin_baggage_kg) ??
-        serviceAmount(services, 'CABIN_BAG');
-    const seatSelection =
-        booleanValue(fare.seat_selection_free) ??
-        serviceIsEnabled(serviceByCode(services, 'SEAT_SELECTION'));
-    const changeFee = numberValue(fare.change_fee_usd);
-    const refundFee = numberValue(fare.refund_fee_usd);
-    const changeFeePercent = numberValue(fare.change_fee_percent);
-    const refundFeePercent = numberValue(fare.refund_fee_percent);
-    const changeHours = numberValue(fare.latest_change_hours);
-    const refundHours = numberValue(fare.latest_refund_hours);
-    const coreCodes = new Set([
-        'CHECKED_BAG',
-        'CABIN_BAG',
-        'SEAT_SELECTION',
-        'CHANGE_ALLOWED',
-        'CHANGE_FEE',
-        'REFUNDABLE',
-        'REFUND_FEE',
-        'SEAT_STANDARD',
-        'SEAT_EXIT_ROW',
-    ]);
-
-    const rows: FeatureRow[] = [
-        {
-            label: 'Checked bag',
-            value: checkedBag > 0 ? `${checkedBag} kg` : 'Not included',
-            source: serviceSource(services, 'CHECKED_BAG'),
-        },
-        {
-            label: 'Cabin bag',
-            value: cabinBag > 0 ? `${cabinBag} kg` : 'Not included',
-            source: serviceSource(services, 'CABIN_BAG'),
-        },
-        {
-            label: 'Seat selection',
-            value: serviceIsEnabled(serviceByCode(services, 'SEAT_EXIT_ROW'))
-                ? 'Exit row'
-                : serviceIsEnabled(serviceByCode(services, 'SEAT_STANDARD'))
-                  ? 'Standard'
-                  : seatSelection
-                    ? 'Included'
-                    : 'Not included',
-            source: serviceSource(services, 'SEAT_SELECTION'),
-        },
-        {
-            label: 'Changes',
-            value:
-                changeHours !== undefined
-                    ? changeFeePercent !== undefined
-                        ? `${changeFeePercent}% fee until ${changeHours}h`
-                        : changeFee === 0
-                          ? `No fee until ${changeHours}h`
-                          : `$${changeFee ?? 0} fee until ${changeHours}h`
-                    : 'Not included',
-            source: serviceSource(services, 'CHANGE_ALLOWED'),
-        },
-        {
-            label: 'Refunds',
-            value:
-                refundHours !== undefined
-                    ? refundFeePercent !== undefined
-                        ? `${refundFeePercent}% fee until ${refundHours}h`
-                        : refundFee === 0
-                          ? `No fee until ${refundHours}h`
-                          : `$${refundFee ?? 0} fee until ${refundHours}h`
-                    : 'Not included',
-            source: serviceSource(services, 'REFUNDABLE'),
-        },
-    ];
-
-    const extraRows = services
-        .filter((service) => {
-            const code = textValue(service.code);
-
-            return code !== undefined && !coreCodes.has(code);
-        })
-        .map((service) => ({
-            label:
-                textValue(service.name) ?? textValue(service.code) ?? 'Service',
-            value: serviceIsEnabled(service)
-                ? serviceValueLabel(service.value)
-                : 'Not included',
-            source: sourceLabel(service.source),
-        }));
-
-    return [...rows, ...extraRows];
-}
-
 function formatFlightDate(value: string | undefined, locale: Locale): string {
     if (!value) {
         return locale === 'tr' ? 'tarih' : 'date';
@@ -441,260 +271,6 @@ function formatFlightDate(value: string | undefined, locale: Locale): string {
     } catch {
         return value;
     }
-}
-
-function customerFirstName(customer?: CustomerSummary): string | undefined {
-    return customer?.firstName.trim() || undefined;
-}
-
-function cardTitle(
-    card: FlightCard,
-    customer?: CustomerSummary,
-    locale: Locale = 'en',
-): string {
-    if (!card.isCustom) {
-        return card.title;
-    }
-
-    const firstName = customerFirstName(customer);
-
-    if (locale === 'tr') {
-        return firstName ? `${firstName} için özel teklif` : 'Özel teklif';
-    }
-
-    return firstName ? `${firstName}'s custom offer` : 'Custom offer';
-}
-
-function routeDestination(card: FlightCard, locale: Locale): string {
-    const lastSegment = card.segments[card.segments.length - 1];
-
-    return lastSegment?.destination ?? (locale === 'tr' ? 'seyahatiniz' : 'your trip');
-}
-
-function detailIncludes(card: FlightCard, pattern: RegExp): boolean {
-    return card.details.some((detail) => pattern.test(detail));
-}
-
-function bridgeSuggestion(
-    first: FlightCard,
-    second: FlightCard,
-    locale: Locale,
-): string {
-    const destination = routeDestination(first, locale);
-
-    if (
-        detailIncludes(second, /^\d+ kg checked bag/i) &&
-        detailIncludes(first, /no checked bag/i)
-    ) {
-        if (locale === 'tr') {
-            return `${destination} için daha fazla alan istersen kayıtlı bagaj ekleyebiliriz.`;
-        }
-
-        return `Or, we can add checked bags so you have more room for ${destination}.`;
-    }
-
-    if (
-        detailIncludes(second, /^(free change|change allowed)/i) &&
-        detailIncludes(first, /no change/i)
-    ) {
-        if (locale === 'tr') {
-            return 'Planınız değişebilirse değişiklik esnekliği ekleyebiliriz.';
-        }
-
-        return 'Or, we can add change flexibility so the plan can move with you.';
-    }
-
-    if (
-        detailIncludes(second, /^(free refund|refundable)/i) &&
-        detailIncludes(first, /no refund/i)
-    ) {
-        if (locale === 'tr') {
-            return 'Daha yumuşak bir güvence istersen iade esnekliği ekleyebiliriz.';
-        }
-
-        return 'Or, we can add refund flexibility if you want a softer fallback.';
-    }
-
-    if (locale === 'tr') {
-        return `Seyahatinizin ihtiyacına göre ${destination} için daha konforlu bir seçenek de hazırlayabiliriz.`;
-    }
-
-    return `Or, we can tune this with more comfort for ${destination} if the trip needs it.`;
-}
-
-function translateFareCardText(value: string, locale: Locale): string {
-    if (locale !== 'tr') {
-        return value;
-    }
-
-    const normalized = value.trim().toLowerCase();
-    const checkedBag = /^(\d+)\s*kg\s+checked bag$/i.exec(value);
-    const cabinBag = /^(\d+)\s*kg\s+cabin bag$/i.exec(value);
-    const percentChange = /^(\d+)% change fee$/i.exec(value);
-    const percentRefund = /^(\d+)% refund fee$/i.exec(value);
-    const changeFee = /^change allowed, \$(\d+(?:\.\d+)?) fee$/i.exec(value);
-    const refundFee = /^refundable, \$(\d+(?:\.\d+)?) fee$/i.exec(value);
-    const feeUntil = /^(\$?\d+(?:\.\d+)?%?) fee until (\d+)h$/i.exec(value);
-    const noFeeUntil = /^no fee until (\d+)h$/i.exec(value);
-
-    if (checkedBag) {
-        return `${checkedBag[1]} kg kayıtlı bagaj`;
-    }
-
-    if (cabinBag) {
-        return `${cabinBag[1]} kg kabin bagajı`;
-    }
-
-    if (percentChange) {
-        return `%${percentChange[1]} değişiklik ücreti`;
-    }
-
-    if (percentRefund) {
-        return `%${percentRefund[1]} iade ücreti`;
-    }
-
-    if (changeFee) {
-        return `Değişiklik yapılabilir, $${changeFee[1]} ücret`;
-    }
-
-    if (refundFee) {
-        return `İade edilebilir, $${refundFee[1]} ücret`;
-    }
-
-    if (feeUntil) {
-        return `${feeUntil[1]} ücret, ${feeUntil[2]} saate kadar`;
-    }
-
-    if (noFeeUntil) {
-        return `${noFeeUntil[1]} saate kadar ücretsiz`;
-    }
-
-    const translations: Record<string, string> = {
-        'lowest fare': 'En düşük ücret',
-        'bag included': 'Bagaj dahil',
-        'flexible fare': 'Esnek ücret',
-        'custom offer': 'Özel teklif',
-        option: 'Seçenek',
-        refundable: 'İade edilebilir',
-        changeable: 'Değiştirilebilir',
-        'no checked bag': 'Kayıtlı bagaj yok',
-        'no change allowed': 'Değişiklik yapılamaz',
-        'no refund allowed': 'İade yapılamaz',
-        'seat selection paid': 'Koltuk seçimi ücretli',
-        'seat selection included': 'Koltuk seçimi dahil',
-        'checked bag': 'Kayıtlı bagaj',
-        'cabin bag': 'Kabin bagajı',
-        'seat selection': 'Koltuk seçimi',
-        changes: 'Değişiklikler',
-        refunds: 'İadeler',
-        included: 'Dahil',
-        'not included': 'Dahil değil',
-        standard: 'Standart',
-        'exit row': 'Acil çıkış sırası',
-        unlimited: 'Sınırsız',
-        yes: 'Evet',
-        no: 'Hayır',
-        package: 'Paket',
-        'custom choice': 'Özel seçim',
-        'rule benefit': 'Kural avantajı',
-        service: 'Hizmet',
-        'free change': 'Ücretsiz değişiklik',
-        'free refund': 'Ücretsiz iade',
-    };
-
-    return translations[normalized] ?? value;
-}
-
-function messageWithSearchPrefill(
-    message: string,
-    prefill: WingoSearchPrefill | null,
-): string {
-    if (
-        !shouldAttachSearchPrefill(message) ||
-        !prefill?.origin ||
-        !prefill.destination ||
-        !prefill.date
-    ) {
-        return message;
-    }
-
-    const returnText =
-        prefill.tripType === 'round_trip' && prefill.returnDate
-            ? ` Return on ${prefill.returnDate}.`
-            : '';
-    const passengerText = [
-        `adults ${prefill.adults ?? 1}`,
-        `children ${prefill.children ?? 0}`,
-        `babies ${prefill.babies ?? 0}`,
-    ].join(', ');
-
-    const messageWithContext = `${message}\n\nCurrent search form: from ${prefill.origin} to ${prefill.destination} on ${prefill.date}.${returnText} Passengers: ${passengerText}. Use this prefill only for flight search, fare recommendation, bundle building, checkout, or purchase questions. Ignore the prefill for policy, passenger rights, cancellation, compensation, refund-rule, baggage-rule, or other knowledge-base questions.`;
-
-    return messageWithContext.length <= 2000 ? messageWithContext : message;
-}
-
-function shouldAttachSearchPrefill(message: string): boolean {
-    const normalized = message.toLowerCase();
-
-    if (
-        /\b(what|which|how|when|where|why|can|do|does|are|is)\b.*\b(rights?|rules?|policy|policies|cancel(?:led|lation)?|refunds?|compensation|allowance)\b/.test(
-            normalized,
-        ) ||
-        [
-            'passenger rights',
-            'refund rule',
-            'refund policy',
-            'cancellation rule',
-            'cancellation policy',
-            'compensation',
-            'baggage allowance',
-            'bag rule',
-            'what happens',
-            'what are my',
-        ].some((keyword) => normalized.includes(keyword))
-    ) {
-        return false;
-    }
-
-    return [
-        'flight',
-        'fare',
-        'ticket',
-        'trip',
-        'fly',
-        'route',
-        'price',
-        'cheap',
-        'lowest',
-        'comfort',
-        'bundle',
-        'package',
-        'bag',
-        'seat',
-        'change',
-        'flex',
-        'lounge',
-        'fast track',
-        'wi-fi',
-        'wifi',
-    ].some((keyword) => normalized.includes(keyword));
-}
-
-function guidedChoicesFromTrace(toolTrace?: ToolTrace[]): GuidedChoice[] {
-    const trace = toolTrace?.find((item) => item.tool === 'guided_choices');
-    const choices = trace?.result.choices;
-
-    if (!Array.isArray(choices)) {
-        return [];
-    }
-
-    return choices
-        .filter(isRecord)
-        .map((choice) => ({
-            label: textValue(choice.label) ?? '',
-            message: textValue(choice.message) ?? '',
-        }))
-        .filter((choice) => choice.label !== '' && choice.message !== '');
 }
 
 function formatInline(text: string): ReactNode[] {
@@ -723,15 +299,13 @@ function formatInline(text: string): ReactNode[] {
     return nodes;
 }
 
-function passengerCountsFromTrace(
-    result: Record<string, unknown>,
+function passengerCountsFromRecord(
+    record: Record<string, unknown>,
 ): PassengerCounts {
-    const passengers = isRecord(result.passengers) ? result.passengers : {};
-
     return {
-        adults: numberValue(passengers.adults) ?? 1,
-        children: numberValue(passengers.children) ?? 0,
-        babies: numberValue(passengers.babies) ?? 0,
+        adults: numberValue(record.adults) ?? 1,
+        children: numberValue(record.children) ?? 0,
+        babies: numberValue(record.babies) ?? 0,
     };
 }
 
@@ -749,19 +323,7 @@ function segmentFromRecord(segment: Record<string, unknown>): FlightSegment {
     };
 }
 
-function fallbackSegment(flight: Record<string, unknown>): FlightSegment {
-    return {
-        flightNumber: textValue(flight.flight_number),
-        origin: textValue(flight.origin),
-        destination: textValue(flight.destination),
-        date: textValue(flight.date),
-        hour: textValue(flight.hour),
-        arrivalHour: textValue(flight.arrival_hour),
-        duration: textValue(flight.duration_str),
-    };
-}
-
-function routeLabel(segments: FlightSegment[]) {
+function routeLabel(segments: FlightSegment[]): string | undefined {
     const first = segments[0];
     const last = segments[segments.length - 1];
 
@@ -772,343 +334,243 @@ function routeLabel(segments: FlightSegment[]) {
     if (segments.length > 1) {
         return [first.origin, first.destination, last.destination]
             .filter(Boolean)
-            .join(' to ');
+            .join(' → ');
     }
 
-    return [first.origin, first.destination].filter(Boolean).join(' to ');
+    return [first.origin, first.destination].filter(Boolean).join(' → ');
 }
 
-function fareCheckedBagKg(fare: Record<string, unknown>): number {
-    return (
-        numberValue(fare.checked_baggage_kg) ??
-        serviceAmount(asRecords(fare.services), 'CHECKED_BAG')
-    );
-}
-
-function fareCabinBagKg(fare: Record<string, unknown>): number {
-    return (
-        numberValue(fare.cabin_baggage_kg) ??
-        serviceAmount(asRecords(fare.services), 'CABIN_BAG')
-    );
-}
-
-function fareHasSeatSelection(fare: Record<string, unknown>): boolean {
-    const services = asRecords(fare.services);
-    const seatSelection = booleanValue(fare.seat_selection_free);
-
-    return (
-        seatSelection ??
-        (serviceIsEnabled(serviceByCode(services, 'SEAT_SELECTION')) ||
-            serviceIsEnabled(serviceByCode(services, 'SEAT_STANDARD')) ||
-            serviceIsEnabled(serviceByCode(services, 'SEAT_EXIT_ROW')))
-    );
-}
-
-function fareHasChange(fare: Record<string, unknown>): boolean {
-    return (
-        fare.latest_change_hours !== null &&
-        fare.latest_change_hours !== undefined
-    );
-}
-
-function fareHasRefund(fare: Record<string, unknown>): boolean {
-    return (
-        fare.latest_refund_hours !== null &&
-        fare.latest_refund_hours !== undefined
-    );
-}
-
-function fareHasWifi(fare: Record<string, unknown>): boolean {
-    const services = asRecords(fare.services);
-
-    return ['WIFI', 'WIFI_1GB', 'WIFI_5GB', 'WIFI_UNLIMITED'].some((code) =>
-        serviceIsEnabled(serviceByCode(services, code)),
-    );
-}
-
-function highlightMatchesFare(
-    fare: Record<string, unknown>,
-    highlight: string,
-): boolean {
-    const normalized = highlight.toLowerCase();
-
-    if (normalized.includes('checked') || normalized.includes('baggage')) {
-        return fareCheckedBagKg(fare) > 0;
-    }
-
-    if (normalized.includes('cabin')) {
-        return fareCabinBagKg(fare) > 0;
-    }
-
-    if (normalized.includes('seat')) {
-        return fareHasSeatSelection(fare);
-    }
-
-    if (normalized.includes('refund')) {
-        return fareHasRefund(fare);
-    }
-
-    if (normalized.includes('change')) {
-        return fareHasChange(fare);
-    }
-
-    if (normalized.includes('flex')) {
-        return fareHasChange(fare) || fareHasRefund(fare);
-    }
-
-    if (normalized.includes('wi-fi') || normalized.includes('wifi')) {
-        return fareHasWifi(fare);
-    }
-
-    return true;
-}
-
-function actualHighlightPills(fare: Record<string, unknown>): string[] {
-    if (booleanValue(fare.customized) === true) {
-        return ['Custom offer'];
-    }
-
-    const checkedBag = fareCheckedBagKg(fare);
-    const cabinBag = fareCabinBagKg(fare);
-
-    if (checkedBag > 0) {
-        return [`${checkedBag} kg checked bag`];
-    }
-
-    if (fareHasRefund(fare)) {
-        return ['Refundable'];
-    }
-
-    if (fareHasChange(fare)) {
-        return ['Changeable'];
-    }
-
-    if (cabinBag > 0) {
-        return [`${cabinBag} kg cabin bag`];
-    }
-
-    return ['Lowest fare'];
-}
-
-function highlightPillsForFare(
-    fare: Record<string, unknown>,
-    highlights: string[],
-): string[] {
-    const filtered = highlights.filter((highlight) =>
-        highlightMatchesFare(fare, highlight),
-    );
-
-    return filtered.length > 0 ? filtered : actualHighlightPills(fare);
-}
-
-function badgeForFare(fare: Record<string, unknown>, index: number): string {
-    if (booleanValue(fare.customized) === true) {
-        return 'Custom offer';
-    }
-
-    if (index === 0) {
-        return 'Lowest fare';
-    }
-
-    if (fareCheckedBagKg(fare) > 0) {
-        return 'Bag included';
-    }
-
-    if (fareHasRefund(fare) || fareHasChange(fare)) {
-        return 'Flexible fare';
-    }
-
-    return 'Option';
-}
-
-function fareDetails(fare: Record<string, unknown>): string[] {
-    const checkedBag = fareCheckedBagKg(fare);
-    const cabinBag = fareCabinBagKg(fare);
-    const seatSelection = fareHasSeatSelection(fare);
-    const changeFee = numberValue(fare.change_fee_usd);
-    const refundFee = numberValue(fare.refund_fee_usd);
-    const changeFeePercent = numberValue(fare.change_fee_percent);
-    const refundFeePercent = numberValue(fare.refund_fee_percent);
-    const changeable = fareHasChange(fare);
-    const refundable = fareHasRefund(fare);
-
-    return [
-        checkedBag > 0 ? `${checkedBag} kg checked bag` : 'No checked bag',
-        cabinBag > 0 ? `${cabinBag} kg cabin bag` : undefined,
-        seatSelection === true
-            ? 'Seat selection included'
-            : 'Seat selection paid',
-        changeable
-            ? changeFeePercent !== undefined
-                ? `${changeFeePercent}% change fee`
-                : changeFee === 0
-                  ? 'Free change'
-                  : `Change allowed, $${changeFee} fee`
-            : 'No change allowed',
-        refundable
-            ? refundFeePercent !== undefined
-                ? `${refundFeePercent}% refund fee`
-                : refundFee === 0
-                  ? 'Free refund'
-                  : `Refundable, $${refundFee} fee`
-            : 'No refund allowed',
-    ].filter((detail): detail is string => Boolean(detail));
-}
-
-function flightCardsFromTrace(toolTrace?: ToolTrace[]): FlightCard[] {
+function offersFromTrace(toolTrace?: ToolTrace[]): OfferCard[] {
     if (!toolTrace) {
         return [];
     }
 
-    const bundleCards = toolTrace.flatMap((trace) => {
-        if (trace.tool !== 'build_dynamic_bundles') {
-            return [];
-        }
+    const trace = [...toolTrace]
+        .reverse()
+        .find((item) => item.tool === 'present_offers');
 
-        const flight = isRecord(trace.result.flight) ? trace.result.flight : {};
-        const passengers = passengerCountsFromTrace(trace.result);
-
-        return asRecords(trace.result.recommended_picks).map((pick, index) => {
-            const segments = asRecords(pick.segments).map(segmentFromRecord);
-            const fallback = fallbackSegment(flight);
-            const finalSegments = segments.length > 0 ? segments : [fallback];
-            const totalPrice = numberValue(pick.base_price_usd) ?? 0;
-            const offerIds = numberList(pick.offer_ids);
-            const fallbackOfferId = numberValue(pick.id);
-
-            return {
-                key: `bundle-${textValue(flight.flight_number) ?? 'flight'}-${textValue(pick.uuid) ?? index}`,
-                badge: badgeForFare(pick, index),
-                title: textValue(pick.class) ?? 'Recommended package',
-                price: formatMoney(totalPrice) ?? '$0',
-                totalPrice,
-                offerIds:
-                    offerIds.length > 0
-                        ? offerIds
-                        : fallbackOfferId !== undefined
-                          ? [fallbackOfferId]
-                          : [],
-                passengers,
-                route: routeLabel(finalSegments),
-                segments: finalSegments,
-                details: fareDetails(pick),
-                featureRows: featureRowsFromFare(pick),
-                packageCode: textValue(pick.package_code),
-                classLetters: textValue(pick.class_letters),
-                isPrivate: booleanValue(pick.public) === false,
-                isCustom: booleanValue(pick.customized) === true,
-                highlightPills: highlightPillsForFare(
-                    pick,
-                    stringList(pick.highlight_pills),
-                ),
-            };
-        });
-    });
-
-    if (bundleCards.length > 0) {
-        return bundleCards.slice(0, 2);
+    if (!trace) {
+        return [];
     }
 
-    return toolTrace
-        .flatMap((trace) => {
-            if (trace.tool !== 'search_flights') {
-                return [];
-            }
+    return asRecords(trace.result.offers)
+        .map((offer, index) => {
+            const segments = asRecords(offer.segments).map(segmentFromRecord);
+            const totalPrice = numberValue(offer.total_price_usd) ?? 0;
+            const offerIds = numberList(offer.offer_ids);
 
-            return asRecords(trace.result.flights).flatMap((flight, index) => {
-                const fares = asRecords(flight.fares);
-                const fare = fares[0];
-
-                if (!fare) {
-                    return [];
-                }
-
-                const priceBreakdown = isRecord(fare.price_breakdown)
-                    ? fare.price_breakdown
-                    : {};
-                const route = [
-                    textValue(flight.origin),
-                    textValue(flight.destination),
-                ]
-                    .filter(Boolean)
-                    .join(' to ');
-                const offerId = numberValue(fare.id);
-
-                return [
-                    {
-                        key: `flight-${textValue(flight.flight_number) ?? index}-${textValue(fare.class) ?? 'fare'}`,
-                        badge: badgeForFare(fare, index),
-                        title: textValue(fare.class) ?? 'Available fare',
-                        price:
-                            formatMoney(priceBreakdown.grand_total_usd) ??
-                            formatMoney(fare.base_price_usd) ??
-                            '$0',
-                        totalPrice:
-                            numberValue(priceBreakdown.grand_total_usd) ??
-                            numberValue(fare.base_price_usd) ??
-                            0,
-                        offerIds: offerId !== undefined ? [offerId] : [],
-                        passengers: passengerCountsFromTrace(trace.result),
-                        route,
-                        segments: [
-                            {
-                                flightNumber: textValue(flight.flight_number),
-                                origin: textValue(flight.origin),
-                                destination: textValue(flight.destination),
-                                date: textValue(flight.date),
-                                hour: textValue(flight.hour),
-                                arrivalHour: textValue(flight.arrival_hour),
-                                duration: textValue(flight.duration_str),
-                            },
-                        ],
-                        details: fareDetails(fare),
-                        featureRows: featureRowsFromFare(fare),
-                        packageCode: textValue(fare.package_code),
-                        classLetters: textValue(fare.class_letters),
-                        isPrivate: booleanValue(fare.public) === false,
-                        isCustom: booleanValue(fare.customized) === true,
-                        highlightPills: highlightPillsForFare(
-                            fare,
-                            stringList(fare.highlight_pills),
-                        ),
-                    },
-                ];
-            });
+            return {
+                key: `offer-${offerIds.join('-') || index}`,
+                offerIds,
+                memo: textValue(offer.memo) ?? '',
+                title: textValue(offer.title) ?? 'Offer',
+                price: formatMoney(totalPrice) ?? '$0',
+                totalPrice,
+                isCustom: booleanValue(offer.is_custom) === true,
+                isRoundTrip: booleanValue(offer.is_round_trip) === true,
+                passengers: passengerCountsFromRecord(
+                    isRecord(offer.passengers) ? offer.passengers : {},
+                ),
+                segments,
+                route: routeLabel(segments),
+                raw: offer,
+            } satisfies OfferCard;
         })
         .slice(0, 2);
 }
 
+function followUpFromTrace(toolTrace?: ToolTrace[]): FollowUp | null {
+    const trace = toolTrace?.find((item) => item.tool === 'ask_follow_up');
+
+    if (!trace) {
+        return null;
+    }
+
+    const choices = asRecords(trace.result.choices)
+        .map((choice) => ({
+            label: textValue(choice.label) ?? '',
+            message: textValue(choice.message) ?? '',
+        }))
+        .filter((choice) => choice.label !== '' && choice.message !== '');
+
+    return {
+        question: textValue(trace.result.question) ?? '',
+        choices,
+    };
+}
+
+function flexValue(
+    t: (key: TranslationKey) => string,
+    locale: Locale,
+    hours: number | undefined,
+    feeUsd: number | undefined,
+    feePercent: number | undefined,
+): string {
+    if (hours === undefined) {
+        return t('chat.val.notIncluded');
+    }
+
+    if (feePercent !== undefined) {
+        return locale === 'tr'
+            ? `%${feePercent} ücret, ${hours} sa öncesine kadar`
+            : `${feePercent}% fee until ${hours}h`;
+    }
+
+    if (feeUsd === 0) {
+        return locale === 'tr'
+            ? `${hours} sa öncesine kadar ücretsiz`
+            : `Free until ${hours}h`;
+    }
+
+    const fee = feeUsd ?? 0;
+
+    return locale === 'tr'
+        ? `$${fee} ücret, ${hours} sa öncesine kadar`
+        : `$${fee} fee until ${hours}h`;
+}
+
+function featureRowsFromCard(
+    raw: Record<string, unknown>,
+    t: (key: TranslationKey) => string,
+    locale: Locale,
+): FeatureRow[] {
+    const services = asRecords(raw.services);
+    const checkedBag =
+        numberValue(raw.checked_baggage_kg) ??
+        serviceAmount(services, 'CHECKED_BAG');
+    const cabinBag =
+        numberValue(raw.cabin_baggage_kg) ??
+        serviceAmount(services, 'CABIN_BAG');
+    const seatSelection = booleanValue(raw.seat_selection_free) === true;
+    const changeHours = numberValue(raw.latest_change_hours);
+    const refundHours = numberValue(raw.latest_refund_hours);
+
+    const seatValue = serviceIsEnabled(serviceByCode(services, 'SEAT_EXIT_ROW'))
+        ? t('chat.val.exitRow')
+        : serviceIsEnabled(serviceByCode(services, 'SEAT_STANDARD'))
+          ? t('chat.val.standard')
+          : seatSelection
+            ? t('chat.val.included')
+            : t('chat.val.notIncluded');
+
+    return [
+        {
+            label: t('chat.feat.checkedBag'),
+            value:
+                checkedBag > 0
+                    ? `${checkedBag} kg`
+                    : t('chat.val.notIncluded'),
+        },
+        {
+            label: t('chat.feat.cabinBag'),
+            value: cabinBag > 0 ? `${cabinBag} kg` : t('chat.val.notIncluded'),
+        },
+        {
+            label: t('chat.feat.seat'),
+            value: seatValue,
+        },
+        {
+            label: t('chat.feat.changes'),
+            value: flexValue(
+                t,
+                locale,
+                changeHours,
+                numberValue(raw.change_fee_usd),
+                numberValue(raw.change_fee_percent),
+            ),
+        },
+        {
+            label: t('chat.feat.refunds'),
+            value: flexValue(
+                t,
+                locale,
+                refundHours,
+                numberValue(raw.refund_fee_usd),
+                numberValue(raw.refund_fee_percent),
+            ),
+        },
+    ];
+}
+
+function customerFirstName(customer?: CustomerSummary): string | undefined {
+    return customer?.firstName.trim() || undefined;
+}
+
+function offerTitle(
+    card: OfferCard,
+    customer: CustomerSummary | undefined,
+    locale: Locale,
+): string {
+    if (!card.isCustom) {
+        return card.title;
+    }
+
+    const firstName = customerFirstName(customer);
+
+    if (locale === 'tr') {
+        return firstName ? `${firstName} için hazırlandı` : 'Sana özel';
+    }
+
+    return firstName ? `Built for ${firstName}` : 'Built for you';
+}
+
 export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
-    const { props } = usePage<{ customer?: CustomerSummary }>();
+    const page = usePage<{
+        customer?: CustomerSummary;
+        auth?: { user?: { name?: string } | null };
+    }>();
     const { locale, t } = useTranslation();
-    const customer = props.customer;
+    const customer = page.props.customer;
+    const currentPage = page.component;
+    const firstName =
+        customerFirstName(customer) ??
+        page.props.auth?.user?.name?.trim().split(/\s+/)[0];
+
     const [input, setInput] = useState('');
     const [searchPrefill, setSearchPrefill] =
         useState<WingoSearchPrefill | null>(() =>
             readStoredWingoSearchPrefill(),
         );
-    const [checkoutTarget, setCheckoutTarget] = useState<CheckoutTarget | null>(
-        null,
-    );
+    const [checkoutTarget, setCheckoutTarget] = useState<OfferCard | null>(null);
     const [isSending, setIsSending] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [typeOverride, setTypeOverride] = useState(false);
+    const [consentGiven, setConsentGiven] = useState<boolean>(() =>
+        storedConsent(),
+    );
+    const [consentDeclined, setConsentDeclined] = useState(false);
+
     const sessionId = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+    const voiceBaseRef = useRef('');
+    const consentRef = useRef(consentGiven);
+    const locationRef = useRef<GeoLocation | null>(null);
+    const pendingLaunch = useRef<WingoLaunchDetail | null>(null);
+
     const [messages, setMessages] = useState<ChatMessage[]>([
         {
             id: 'welcome',
             role: 'assistant',
-            text: t('chat.welcome'),
+            text: firstName
+                ? t('chat.welcomeNamed').replace(':name', firstName)
+                : t('chat.welcome'),
             status: 'sent',
         },
     ]);
+
     const suggestions = [
         t('chat.suggestions.help'),
         t('chat.suggestions.flexibility'),
         t('chat.suggestions.airports'),
         t('chat.suggestions.cancelled'),
     ];
+
+    useEffect(() => {
+        consentRef.current = consentGiven;
+    }, [consentGiven]);
 
     const applyAssistantReply = useCallback(
         (event: ChatbotMessageReadyEvent) => {
@@ -1124,6 +586,7 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
                         : message,
                 ),
             );
+            setTypeOverride(false);
             setIsSending(false);
         },
         [],
@@ -1209,77 +672,176 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
         });
     }, [messages, isOpen]);
 
-    async function sendMessage(text: string) {
-        const trimmed = text.trim();
+    useEffect(() => {
+        const element = textareaRef.current;
 
-        if (!trimmed || isSending) {
+        if (!element) {
             return;
         }
 
-        const assistantMessageId = randomId();
-        const chatSessionId = sessionId.current ?? storedSessionId();
-        sessionId.current = chatSessionId;
+        element.style.height = 'auto';
+        element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+    }, [input]);
 
-        setMessages((current) => [
-            ...current,
-            {
-                id: randomId(),
-                role: 'user',
-                text: trimmed,
-                status: 'sent',
-            },
-            {
-                id: assistantMessageId,
-                role: 'assistant',
-                text: t('chat.pending'),
-                status: 'pending',
-            },
-        ]);
-        setInput('');
-        setIsSending(true);
+    const buildContext = useCallback(
+        (
+            prefillOverride: WingoSearchPrefill | null,
+            triggerContext?: WingoTriggerContext,
+        ): Record<string, unknown> => {
+            const prefill = prefillOverride ?? searchPrefill;
+            const context: Record<string, unknown> = { page: currentPage };
 
-        try {
-            const assistantMessage = messageWithSearchPrefill(
-                trimmed,
-                searchPrefill,
-            );
-            const response = await fetch('/api/message', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken(),
-                },
-                body: JSON.stringify({
-                    session_id: chatSessionId,
-                    message_id: assistantMessageId,
-                    message: assistantMessage,
-                    source: 'ours',
-                    language: locale,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Chat request failed.');
+            if (prefill) {
+                context.form = {
+                    origin: prefill.origin,
+                    destination: prefill.destination,
+                    date: prefill.date,
+                    return_date: prefill.returnDate,
+                    trip_type: prefill.tripType,
+                    adults: prefill.adults,
+                    children: prefill.children,
+                    babies: prefill.babies,
+                    submitted: currentPage === 'flight-results',
+                };
             }
 
-            pollForReply(chatSessionId, assistantMessageId);
-        } catch {
-            setMessages((current) =>
-                current.map((message) =>
-                    message.id === assistantMessageId
-                        ? {
-                              ...message,
-                              text: t('chat.failed'),
-                              status: 'failed',
-                          }
-                        : message,
-                ),
-            );
-            setIsSending(false);
-        }
-    }
+            if (locationRef.current) {
+                context.location = locationRef.current;
+            }
+
+            if (triggerContext) {
+                context.trigger_context = triggerContext;
+            }
+
+            return context;
+        },
+        [currentPage, searchPrefill],
+    );
+
+    const sendMessage = useCallback(
+        async (
+            text: string,
+            options?: {
+                prefillOverride?: WingoSearchPrefill | null;
+                trigger?: string;
+                triggerContext?: WingoTriggerContext;
+                hidden?: boolean;
+            },
+        ) => {
+            const trimmed = text.trim();
+            const trigger = options?.trigger;
+
+            if ((!trimmed && !trigger) || isSending) {
+                return;
+            }
+
+            stopVoiceInput();
+            setTypeOverride(false);
+
+            const assistantMessageId = randomId();
+            const chatSessionId = sessionId.current ?? storedSessionId();
+            sessionId.current = chatSessionId;
+
+            setMessages((current) => [
+                ...current,
+                ...(options?.hidden || !trimmed
+                    ? []
+                    : [
+                          {
+                              id: randomId(),
+                              role: 'user' as const,
+                              text: trimmed,
+                              status: 'sent' as const,
+                          },
+                      ]),
+                {
+                    id: assistantMessageId,
+                    role: 'assistant',
+                    text: t('chat.pending'),
+                    status: 'pending',
+                },
+            ]);
+
+            if (!options?.hidden) {
+                setInput('');
+            }
+
+            setIsSending(true);
+
+            try {
+                const response = await fetch('/api/message', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken(),
+                    },
+                    body: JSON.stringify({
+                        session_id: chatSessionId,
+                        message_id: assistantMessageId,
+                        message: trimmed || undefined,
+                        source: 'ours',
+                        language: locale,
+                        consent: true,
+                        trigger,
+                        context: buildContext(
+                            options?.prefillOverride ?? null,
+                            options?.triggerContext,
+                        ),
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Chat request failed.');
+                }
+
+                pollForReply(chatSessionId, assistantMessageId);
+            } catch {
+                setMessages((current) =>
+                    current.map((message) =>
+                        message.id === assistantMessageId
+                            ? {
+                                  ...message,
+                                  text: t('chat.failed'),
+                                  status: 'failed',
+                              }
+                            : message,
+                    ),
+                );
+                setIsSending(false);
+            }
+        },
+        [buildContext, isSending, locale, pollForReply, t],
+    );
+
+    const fireLaunch = useCallback(
+        (detail: WingoLaunchDetail) => {
+            const nextPrefill = detail.prefill ?? searchPrefill;
+
+            if (detail.prefill) {
+                setSearchPrefill(detail.prefill);
+            }
+
+            if (detail.trigger) {
+                void sendMessage('', {
+                    prefillOverride: nextPrefill ?? null,
+                    trigger: detail.trigger,
+                    triggerContext: detail.triggerContext,
+                    hidden: true,
+                });
+
+                return;
+            }
+
+            if (detail.message) {
+                void sendMessage(detail.message, {
+                    prefillOverride: nextPrefill ?? null,
+                });
+            }
+        },
+        [searchPrefill, sendMessage],
+    );
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -1287,9 +849,9 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
         }
 
         function handleSearchPrefill(event: Event) {
-            const prefill = (event as CustomEvent<WingoSearchPrefill>).detail;
-
-            setSearchPrefill(prefill);
+            setSearchPrefill(
+                (event as CustomEvent<WingoSearchPrefill>).detail,
+            );
         }
 
         window.addEventListener(wingoSearchPrefillEvent, handleSearchPrefill);
@@ -1302,39 +864,146 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
         };
     }, []);
 
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        function handleWingoLaunch(event: Event) {
+            const detail = (event as CustomEvent<WingoLaunchDetail>).detail;
+
+            if (!detail) {
+                return;
+            }
+
+            if (!consentRef.current) {
+                pendingLaunch.current = detail;
+
+                return;
+            }
+
+            window.setTimeout(() => fireLaunch(detail), 0);
+        }
+
+        window.addEventListener(wingoLaunchEvent, handleWingoLaunch);
+
+        return () => {
+            window.removeEventListener(wingoLaunchEvent, handleWingoLaunch);
+        };
+    }, [fireLaunch]);
+
+    function acceptConsent() {
+        window.localStorage.setItem(consentStorageKey, 'yes');
+        setConsentGiven(true);
+        setConsentDeclined(false);
+        consentRef.current = true;
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    locationRef.current = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                    };
+                },
+                () => {
+                    locationRef.current = null;
+                },
+                {
+                    enableHighAccuracy: false,
+                    timeout: 8000,
+                    maximumAge: 600000,
+                },
+            );
+        }
+
+        const pending = pendingLaunch.current;
+
+        if (pending) {
+            pendingLaunch.current = null;
+            window.setTimeout(() => fireLaunch(pending), 0);
+        }
+    }
+
+    function declineConsent() {
+        setConsentDeclined(true);
+    }
+
+    function stopVoiceInput() {
+        recognitionRef.current?.stop();
+        recognitionRef.current = null;
+        setIsListening(false);
+    }
+
     function startVoiceInput() {
         const Recognition =
             window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
-        if (!Recognition || isListening) {
+        if (!Recognition) {
+            return;
+        }
+
+        if (isListening) {
+            stopVoiceInput();
+
             return;
         }
 
         const recognition = new Recognition();
         recognition.lang = locale === 'tr' ? 'tr-TR' : 'en-US';
-        recognition.interimResults = false;
+        recognition.interimResults = true;
+        recognition.continuous = true;
         recognition.maxAlternatives = 1;
+        voiceBaseRef.current = input ? `${input.trimEnd()} ` : '';
         recognition.onstart = () => setIsListening(true);
-        recognition.onend = () => setIsListening(false);
-        recognition.onerror = () => setIsListening(false);
-        recognition.onresult = (event) => {
-            const transcript = event.results[0]?.[0]?.transcript ?? '';
-            setInput((current) => `${current} ${transcript}`.trim());
+        recognition.onend = () => {
+            setIsListening(false);
+            recognitionRef.current = null;
         };
+        recognition.onerror = () => {
+            setIsListening(false);
+            recognitionRef.current = null;
+        };
+        recognition.onresult = (event) => {
+            let transcript = '';
+
+            for (let index = 0; index < event.results.length; index += 1) {
+                transcript += event.results[index]?.[0]?.transcript ?? '';
+            }
+
+            setInput(`${voiceBaseRef.current}${transcript}`.trimStart());
+        };
+        recognitionRef.current = recognition;
         recognition.start();
     }
 
-    function handleGuidedChoice(choice: GuidedChoice) {
-        sendMessage(choice.message);
+    function handleSubmit(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        void sendMessage(input);
+    }
+
+    function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            void sendMessage(input);
+        }
     }
 
     function closeWingoChat() {
         setIsExpanded(false);
+        stopVoiceInput();
         onClose();
     }
 
     const hasUserPrompt = messages.some((message) => message.role === 'user');
     const panelSizeClasses = isExpanded ? 'w-full' : 'w-full sm:w-[600px]';
+    const lastMessage = messages[messages.length - 1];
+    const activeFollowUp =
+        lastMessage?.role === 'assistant' && lastMessage.status === 'sent'
+            ? followUpFromTrace(lastMessage.toolTrace)
+            : null;
+    const lockInput =
+        !!activeFollowUp && activeFollowUp.choices.length > 0 && !typeOverride;
 
     return (
         <>
@@ -1416,25 +1085,28 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
                                 isPending={message.status === 'pending'}
                             />
                             {message.role === 'assistant' && (
-                                <GuidedChoiceButtons
-                                    choices={guidedChoicesFromTrace(
-                                        message.toolTrace,
-                                    )}
+                                <ChoiceButtons
+                                    choices={
+                                        followUpFromTrace(message.toolTrace)
+                                            ?.choices ?? []
+                                    }
                                     disabled={isSending}
-                                    onSelect={handleGuidedChoice}
+                                    onSelect={(choice) =>
+                                        sendMessage(choice.message)
+                                    }
                                 />
                             )}
                             {message.role === 'assistant' && (
-                                <FlightSuggestionCards
+                                <OfferCards
                                     toolTrace={message.toolTrace}
                                     customer={customer}
-                                    onSelect={setCheckoutTarget}
+                                    onCheckout={setCheckoutTarget}
                                 />
                             )}
                         </div>
                     ))}
 
-                    {!hasUserPrompt && (
+                    {!hasUserPrompt && !lockInput && (
                         <div className="mr-6 rounded-md border border-slate-200 bg-white p-4">
                             <div className="mb-2 font-bold text-red-800">
                                 {t('chat.tryAsking')}
@@ -1456,46 +1128,66 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
                 </div>
 
                 <div className="border-t border-slate-200 bg-white p-4">
-                    <form
-                        className="flex gap-2.5"
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            sendMessage(input);
-                        }}
-                    >
-                        <input
-                            className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition-colors outline-none focus:border-red-800 focus:bg-white"
-                            placeholder={t('chat.typeMessage')}
-                            value={input}
-                            onChange={(event) => setInput(event.target.value)}
-                        />
-                        <button
-                            type="button"
-                            title={
-                                isListening
-                                    ? t('chat.listening')
-                                    : t('chat.voiceInput')
-                            }
-                            className={`hidden w-12 shrink-0 items-center justify-center rounded-md border transition-colors sm:inline-flex ${
-                                isListening
-                                    ? 'border-red-800 bg-red-50 text-red-800'
-                                    : 'border-slate-200 bg-white text-slate-500 hover:border-red-800 hover:text-red-800'
-                            }`}
-                            onClick={startVoiceInput}
-                        >
-                            <Mic className="size-5" />
-                        </button>
-                        <button
-                            className="inline-flex items-center justify-center rounded-md bg-red-800 px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={isSending}
-                        >
-                            <Send className="size-5" />
-                        </button>
-                    </form>
+                    {lockInput ? (
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-xs font-medium text-slate-500">
+                                {t('chat.selectOption')}
+                            </span>
+                            <button
+                                type="button"
+                                className="shrink-0 text-xs font-black text-red-800 underline-offset-2 hover:underline"
+                                onClick={() => setTypeOverride(true)}
+                            >
+                                {t('chat.typeOwn')}
+                            </button>
+                        </div>
+                    ) : (
+                        <form className="flex items-end gap-2.5" onSubmit={handleSubmit}>
+                            <textarea
+                                ref={textareaRef}
+                                rows={1}
+                                className="max-h-40 flex-1 resize-none rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-5 transition-colors outline-none focus:border-red-800 focus:bg-white"
+                                placeholder={t('chat.typeMessage')}
+                                value={input}
+                                onChange={(event) => setInput(event.target.value)}
+                                onKeyDown={handleKeyDown}
+                            />
+                            <button
+                                type="button"
+                                title={
+                                    isListening
+                                        ? t('chat.listening')
+                                        : t('chat.voiceInput')
+                                }
+                                className={`inline-flex size-12 shrink-0 items-center justify-center rounded-md border transition-colors ${
+                                    isListening
+                                        ? 'border-red-800 bg-red-50 text-red-800'
+                                        : 'border-slate-200 bg-white text-slate-500 hover:border-red-800 hover:text-red-800'
+                                }`}
+                                onClick={startVoiceInput}
+                            >
+                                <Mic className="size-5" />
+                            </button>
+                            <button
+                                className="inline-flex size-12 shrink-0 items-center justify-center rounded-md bg-red-800 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={isSending}
+                            >
+                                <Send className="size-5" />
+                            </button>
+                        </form>
+                    )}
                     <div className="mt-2 px-1 text-[10px] font-medium text-slate-400">
                         {t('chat.disclaimer')}
                     </div>
                 </div>
+
+                {isOpen && !consentGiven && (
+                    <ConsentGate
+                        declined={consentDeclined}
+                        onAccept={acceptConsent}
+                        onDecline={declineConsent}
+                    />
+                )}
             </aside>
             {checkoutTarget && (
                 <WingoCheckoutModal
@@ -1508,7 +1200,61 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
     );
 }
 
-function GuidedChoiceButtons({
+function ConsentGate({
+    declined,
+    onAccept,
+    onDecline,
+}: {
+    declined: boolean;
+    onAccept: () => void;
+    onDecline: () => void;
+}) {
+    const { t } = useTranslation();
+
+    return (
+        <div className="absolute inset-0 z-20 flex flex-col overflow-y-auto bg-white/95 backdrop-blur-sm">
+            <div className="m-auto w-full max-w-md p-6">
+                <div className="mb-4 flex items-center gap-3">
+                    <span className="grid size-11 place-items-center rounded-md bg-red-50 text-red-800">
+                        <ShieldCheck className="size-6" />
+                    </span>
+                    <h2 className="font-display text-lg font-black text-slate-950">
+                        {t('chat.consent.title')}
+                    </h2>
+                </div>
+                <p className="text-sm leading-6 text-slate-600">
+                    {t('chat.consent.body')}
+                </p>
+                <p className="mt-3 text-xs leading-5 text-slate-500">
+                    {t('chat.consent.location')}
+                </p>
+                {declined && (
+                    <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                        {t('chat.consent.declined')}
+                    </p>
+                )}
+                <div className="mt-6 grid gap-2">
+                    <button
+                        type="button"
+                        className="h-12 rounded-md bg-red-800 text-sm font-black text-white transition-colors hover:bg-red-900"
+                        onClick={onAccept}
+                    >
+                        {t('chat.consent.accept')}
+                    </button>
+                    <button
+                        type="button"
+                        className="h-11 rounded-md border border-slate-200 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
+                        onClick={onDecline}
+                    >
+                        {t('chat.consent.decline')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ChoiceButtons({
     choices,
     disabled,
     onSelect,
@@ -1538,6 +1284,24 @@ function GuidedChoiceButtons({
     );
 }
 
+function TypingIndicator({ label }: { label: string }) {
+    return (
+        <div
+            className="flex h-6 items-center gap-1"
+            role="status"
+            aria-label={label}
+        >
+            {[0, 1, 2].map((index) => (
+                <span
+                    key={index}
+                    className="size-2 rounded-full bg-red-700 motion-safe:animate-bounce"
+                    style={{ animationDelay: `${index * 120}ms` }}
+                />
+            ))}
+        </div>
+    );
+}
+
 function RichMessage({
     text,
     isPending,
@@ -1545,6 +1309,10 @@ function RichMessage({
     text: string;
     isPending: boolean;
 }) {
+    if (isPending) {
+        return <TypingIndicator label={text} />;
+    }
+
     const lines = text.split(/\r?\n/);
     const blocks: ReactNode[] = [];
     let bulletItems: string[] = [];
@@ -1598,59 +1366,92 @@ function RichMessage({
     flushBullets();
 
     return (
-        <div className={`space-y-2 ${isPending ? 'animate-pulse' : ''}`}>
+        <div className="space-y-2">
             {blocks.length > 0 ? blocks : <p>{text}</p>}
         </div>
     );
 }
 
-function FlightSuggestionCards({
+function OfferCards({
     toolTrace,
     customer,
-    onSelect,
+    onCheckout,
 }: {
     toolTrace?: ToolTrace[];
     customer?: CustomerSummary;
-    onSelect: (target: CheckoutTarget) => void;
+    onCheckout: (card: OfferCard) => void;
 }) {
     const { locale, t } = useTranslation();
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
-    const cards = flightCardsFromTrace(toolTrace);
+    const [isComparing, setIsComparing] = useState(false);
+    const cards = offersFromTrace(toolTrace);
 
     if (cards.length === 0) {
         return null;
     }
 
     return (
-        <div className="mt-3 grid gap-3">
-            {cards.map((card, index) => {
+        <div className="mt-3 grid gap-4">
+            {cards.map((card) => {
                 const isExpanded = expandedKey === card.key;
 
                 return (
-                    <div key={card.key} className="grid gap-3">
-                        {index === 1 && (
-                            <p className="animate-in px-1 text-xs leading-5 font-medium text-slate-600 duration-300 fade-in-50 slide-in-from-bottom-1">
-                                {bridgeSuggestion(cards[0], card, locale)}
+                    <div key={card.key} className="grid gap-2">
+                        {card.memo && (
+                            <p className="px-1 text-xs leading-5 font-medium text-slate-600">
+                                {card.memo}
                             </p>
                         )}
-                        <article
-                            className="animate-in overflow-hidden rounded-md border border-slate-200 bg-white text-slate-950 shadow-sm transition-all duration-300 fade-in-50 slide-in-from-bottom-1 hover:-translate-y-0.5 hover:border-red-200 hover:shadow-md"
-                            style={{ animationDelay: `${index * 70}ms` }}
-                        >
-                            <button
-                                type="button"
-                                className="block w-full text-left"
-                                aria-expanded={isExpanded}
-                                onClick={() =>
-                                    setExpandedKey(isExpanded ? null : card.key)
-                                }
-                            >
-                                <FlightDisplay
-                                    card={card}
-                                    customer={customer}
-                                    expanded={isExpanded}
-                                />
-                            </button>
+                        <article className="overflow-hidden rounded-md border border-slate-200 bg-white text-slate-950 shadow-sm">
+                            <div className="grid gap-3 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="truncate font-display text-base font-black text-slate-950">
+                                            {offerTitle(card, customer, locale)}
+                                        </div>
+                                        {card.route && (
+                                            <div className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                                                {card.route}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="shrink-0 text-right">
+                                        <div className="font-display text-lg font-black text-red-800">
+                                            {card.price}
+                                        </div>
+                                        <div className="text-[10px] font-bold text-slate-400">
+                                            {t('chat.total').toLowerCase()}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-2">
+                                    {card.segments.map((segment, index) => (
+                                        <SegmentRow
+                                            key={`${card.key}-segment-${index}`}
+                                            segment={segment}
+                                        />
+                                    ))}
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="flex items-center justify-end gap-1.5 text-xs font-black text-red-800"
+                                    aria-expanded={isExpanded}
+                                    onClick={() =>
+                                        setExpandedKey(
+                                            isExpanded ? null : card.key,
+                                        )
+                                    }
+                                >
+                                    {t('chat.features')}
+                                    <ChevronDown
+                                        className={`size-4 transition-transform duration-300 ${
+                                            isExpanded ? 'rotate-180' : ''
+                                        }`}
+                                    />
+                                </button>
+                            </div>
 
                             <div
                                 className={`grid transition-all duration-300 ${
@@ -1660,32 +1461,23 @@ function FlightSuggestionCards({
                                 }`}
                             >
                                 <div className="overflow-hidden">
-                                    <div className="animate-in border-t border-slate-200 bg-slate-50/80 p-3 duration-300 fade-in-50 slide-in-from-top-1">
+                                    <div className="border-t border-slate-100 bg-slate-50/70 p-3">
                                         <FeatureTable
-                                            featureRows={card.featureRows}
+                                            rows={featureRowsFromCard(
+                                                card.raw,
+                                                t,
+                                                locale,
+                                            )}
                                         />
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-3">
-                                <div className="flex min-w-0 flex-wrap gap-1.5">
-                                    {card.details.slice(0, 3).map((detail) => (
-                                        <span
-                                            key={detail}
-                                            className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-800 transition-colors"
-                                        >
-                                            {translateFareCardText(
-                                                detail,
-                                                locale,
-                                            )}
-                                        </span>
-                                    ))}
-                                </div>
+                            <div className="flex justify-end border-t border-slate-100 px-4 py-3">
                                 <button
                                     type="button"
-                                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-red-800 px-3 text-xs font-black text-white transition-all duration-200 hover:-translate-y-px hover:bg-red-900 hover:shadow-sm active:translate-y-0"
-                                    onClick={() => onSelect(card)}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-md bg-red-800 px-4 text-xs font-black text-white transition-colors hover:bg-red-900"
+                                    onClick={() => onCheckout(card)}
                                 >
                                     {t('chat.checkout')}
                                     <ArrowRight className="size-3.5" />
@@ -1695,113 +1487,71 @@ function FlightSuggestionCards({
                     </div>
                 );
             })}
+
+            {cards.length > 1 && (
+                <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-md border border-red-200 bg-white px-3 text-xs font-black text-red-800 transition-colors hover:border-red-800 hover:bg-red-50"
+                    onClick={() => setIsComparing(true)}
+                >
+                    {t('chat.compareOffers')}
+                </button>
+            )}
+
+            {isComparing && (
+                <OfferComparisonModal
+                    cards={cards}
+                    customer={customer}
+                    onClose={() => setIsComparing(false)}
+                    onSelect={(card) => {
+                        setIsComparing(false);
+                        onCheckout(card);
+                    }}
+                />
+            )}
         </div>
     );
 }
 
-function FlightDisplay({
-    card,
-    customer,
-    expanded,
-}: {
-    card: FlightCard;
-    customer?: CustomerSummary;
-    expanded: boolean;
-}) {
-    const { locale, t } = useTranslation();
-    const firstSegment = card.segments[0];
-    const lastSegment = card.segments[card.segments.length - 1] ?? firstSegment;
+function SegmentRow({ segment }: { segment: FlightSegment }) {
+    const { t } = useTranslation();
 
     return (
-        <div className="grid gap-3 p-3">
-            <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="rounded-md bg-red-800 px-2 py-1 font-condensed text-[10px] font-black tracking-normal text-white uppercase">
-                            {translateFareCardText(card.badge, locale)}
-                        </span>
-                        {card.isCustom && (
-                            <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700">
-                                {t('chat.custom')}
-                            </span>
-                        )}
-                        {card.isPrivate && (
-                            <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-700">
-                                {t('chat.privateOffer')}
-                            </span>
-                        )}
-                        {card.highlightPills.map((highlight) => (
-                            <span
-                                key={highlight}
-                                className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-800"
-                            >
-                                {translateFareCardText(highlight, locale)}
-                            </span>
-                        ))}
-                    </div>
-                    <div className="mt-2 truncate font-display text-base font-black text-slate-950">
-                        {cardTitle(card, customer, locale)}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
-                        <span>
-                            {firstSegment?.flightNumber ?? t('chat.flight')}
-                        </span>
-                        {card.packageCode && <span>{card.packageCode}</span>}
-                        {card.classLetters && <span>{card.classLetters}</span>}
-                    </div>
+        <div className="grid items-center gap-3 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_auto_1fr]">
+            <FlightEndpoint
+                align="left"
+                code={segment.origin}
+                time={segment.hour}
+                date={segment.date}
+            />
+            <div className="min-w-[130px]">
+                <div className="mb-1.5 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500 uppercase">
+                    <Clock className="size-3.5" />
+                    {segment.duration ?? t('chat.duration')}
                 </div>
-                <div className="shrink-0 text-right">
-                    <div className="font-display text-lg font-black text-red-800">
-                        {card.price}
-                    </div>
-                    <div className="mt-1 text-[10px] font-bold text-slate-400">
-                        {t('chat.total').toLowerCase()}
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid items-center gap-4 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_auto_1fr]">
-                <FlightEndpoint
-                    align="left"
-                    code={firstSegment?.origin}
-                    time={firstSegment?.hour}
-                    date={firstSegment?.date}
-                />
-                <div className="min-w-[150px]">
-                    <div className="mb-2 flex items-center justify-center gap-2 text-[11px] font-medium text-slate-500 uppercase">
-                        <Clock className="size-3.5" />
-                        {firstSegment?.duration ?? t('chat.duration')}
-                    </div>
-                    <div className="relative flex items-center">
-                        <span className="size-2 rounded-full border border-slate-500 bg-white" />
-                        <div className="h-px flex-1 bg-slate-300" />
-                        <img
-                            src="/assets/thy-emblem.svg"
-                            className="mx-1.5 size-5 shrink-0 object-contain"
-                            alt="Turkish Airlines"
-                        />
-                        <div className="h-px flex-1 bg-slate-300" />
-                        <span className="size-2 rounded-full border border-slate-500 bg-white" />
-                    </div>
-                </div>
-                <FlightEndpoint
-                    align="right"
-                    code={lastSegment?.destination}
-                    time={lastSegment?.arrivalHour}
-                    date={lastSegment?.date}
-                />
-            </div>
-
-            <div className="flex items-center justify-end gap-3 text-xs">
-                <div className="inline-flex shrink-0 items-center gap-1 font-black text-red-800">
-                    {t('chat.features')}
-                    <ChevronDown
-                        className={`size-4 transition-transform duration-300 ${
-                            expanded ? 'rotate-180' : ''
-                        }`}
+                <div className="relative flex items-center">
+                    <span className="size-2 rounded-full border border-slate-500 bg-white" />
+                    <div className="h-px flex-1 bg-slate-300" />
+                    <img
+                        src="/assets/tk-mark.svg"
+                        className="mx-1.5 size-5 shrink-0 object-contain"
+                        alt="Turkish Airlines"
                     />
+                    <div className="h-px flex-1 bg-slate-300" />
+                    <span className="size-2 rounded-full border border-slate-500 bg-white" />
                 </div>
+                {segment.flightNumber && (
+                    <div className="mt-1.5 text-center text-[10px] font-semibold text-slate-400">
+                        {segment.flightNumber}
+                    </div>
+                )}
             </div>
+            <FlightEndpoint
+                align="right"
+                code={segment.destination}
+                time={segment.arrivalHour}
+                date={segment.date}
+            />
         </div>
     );
 }
@@ -1836,38 +1586,33 @@ function FlightEndpoint({
     );
 }
 
-function FeatureTable({ featureRows }: { featureRows: FeatureRow[] }) {
-    const { locale, t } = useTranslation();
+function FeatureTable({ rows }: { rows: FeatureRow[] }) {
+    const { t } = useTranslation();
 
     return (
         <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
             <table className="w-full table-fixed text-left text-xs">
                 <colgroup>
                     <col className="w-[42%]" />
-                    <col className="w-[28%]" />
-                    <col className="w-[30%]" />
+                    <col className="w-[58%]" />
                 </colgroup>
-                <thead className="bg-slate-950 font-condensed text-[10px] font-black tracking-normal text-white uppercase">
-                    <tr>
+                <thead className="font-condensed text-[10px] font-black tracking-normal text-slate-500 uppercase">
+                    <tr className="border-b border-slate-200">
                         <th className="px-3 py-2">{t('chat.feature')}</th>
                         <th className="px-3 py-2">{t('chat.value')}</th>
-                        <th className="px-3 py-2">{t('chat.source')}</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {featureRows.map((row, index) => (
+                    {rows.map((row, index) => (
                         <tr
                             key={`${row.label}-${index}`}
-                            className="border-t border-slate-100 transition-colors hover:bg-red-50/50"
+                            className="border-t border-slate-100"
                         >
                             <td className="px-3 py-2 font-black break-words text-slate-900">
-                                {translateFareCardText(row.label, locale)}
+                                {row.label}
                             </td>
                             <td className="px-3 py-2 font-semibold break-words text-slate-700">
-                                {translateFareCardText(row.value, locale)}
-                            </td>
-                            <td className="px-3 py-2 break-words text-slate-500">
-                                {translateFareCardText(row.source, locale)}
+                                {row.value}
                             </td>
                         </tr>
                     ))}
@@ -1877,25 +1622,161 @@ function FeatureTable({ featureRows }: { featureRows: FeatureRow[] }) {
     );
 }
 
+function OfferComparisonModal({
+    cards,
+    customer,
+    onClose,
+    onSelect,
+}: {
+    cards: OfferCard[];
+    customer?: CustomerSummary;
+    onClose: () => void;
+    onSelect: (card: OfferCard) => void;
+}) {
+    const { locale, t } = useTranslation();
+    const cardRows = cards.map((card) => ({
+        card,
+        rows: featureRowsFromCard(card.raw, t, locale),
+    }));
+    const featureLabels = Array.from(
+        new Set(cardRows.flatMap((entry) => entry.rows.map((row) => row.label))),
+    );
+
+    function valueFor(cardKey: string, label: string): string {
+        const entry = cardRows.find((item) => item.card.key === cardKey);
+        const row = entry?.rows.find((feature) => feature.label === label);
+
+        return row?.value ?? t('chat.notAvailable');
+    }
+
+    return (
+        <div className="fixed inset-0 z-[75] animate-in bg-white duration-200 fade-in-50">
+            <div className="flex h-dvh min-h-0 w-full flex-col bg-white">
+                <div className="flex items-start justify-between gap-4 bg-slate-950 px-5 py-4 text-white sm:px-8">
+                    <div>
+                        <div className="font-condensed text-xs font-bold tracking-wide text-white/70 uppercase">
+                            {t('chat.offerComparison')}
+                        </div>
+                        <h2 className="mt-1 font-display text-xl font-black">
+                            {t('chat.compareOffers')}
+                        </h2>
+                    </div>
+                    <button
+                        type="button"
+                        className="grid size-9 place-items-center rounded-md text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                        onClick={onClose}
+                        aria-label={t('chat.close')}
+                    >
+                        <X className="size-5" />
+                    </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-8">
+                    <table className="w-full table-fixed text-left text-sm">
+                        <colgroup>
+                            <col className="w-[26%]" />
+                            {cards.map((card) => (
+                                <col key={card.key} />
+                            ))}
+                        </colgroup>
+                        <thead>
+                            <tr className="border-b border-slate-200">
+                                <th className="px-3 py-3 font-condensed text-[10px] font-black tracking-normal text-slate-500 uppercase">
+                                    {t('chat.feature')}
+                                </th>
+                                {cards.map((card) => (
+                                    <th
+                                        key={card.key}
+                                        className="border-l border-slate-200 px-3 py-3 align-top"
+                                    >
+                                        <span className="block font-display text-base font-black text-slate-950">
+                                            {offerTitle(card, customer, locale)}
+                                        </span>
+                                        <span className="mt-1 block text-lg font-black text-red-800">
+                                            {card.price}
+                                        </span>
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr className="border-b border-slate-100">
+                                <td className="bg-slate-50 px-3 py-3 font-black text-slate-900">
+                                    {t('chat.flight')}
+                                </td>
+                                {cards.map((card) => (
+                                    <td
+                                        key={`${card.key}-route`}
+                                        className="border-l border-slate-200 px-3 py-3 font-semibold text-slate-700"
+                                    >
+                                        {card.route ??
+                                            routeLabel(card.segments)}
+                                    </td>
+                                ))}
+                            </tr>
+                            {featureLabels.map((label, index) => (
+                                <tr
+                                    key={label}
+                                    className={`border-b border-slate-100 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}`}
+                                >
+                                    <td className="px-3 py-3 font-black text-slate-900">
+                                        {label}
+                                    </td>
+                                    {cards.map((card) => (
+                                        <td
+                                            key={`${card.key}-${label}`}
+                                            className="border-l border-slate-200 px-3 py-3 font-semibold text-slate-700"
+                                        >
+                                            {valueFor(card.key, label)}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot>
+                            <tr className="border-t border-slate-300 bg-slate-50">
+                                <td className="px-3 py-3 text-xs font-black tracking-normal text-slate-500 uppercase">
+                                    {t('chat.checkout')}
+                                </td>
+                                {cards.map((card) => (
+                                    <td
+                                        key={`${card.key}-select`}
+                                        className="border-l border-slate-200 px-3 py-3"
+                                    >
+                                        <button
+                                            type="button"
+                                            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-red-800 px-3 text-xs font-black text-white transition-colors hover:bg-red-900"
+                                            onClick={() => onSelect(card)}
+                                        >
+                                            {t('chat.checkout')}
+                                        </button>
+                                    </td>
+                                ))}
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function WingoCheckoutModal({
     target,
     customer,
     onClose,
 }: {
-    target: CheckoutTarget;
+    target: OfferCard;
     customer?: CustomerSummary;
     onClose: () => void;
 }) {
-    const { t } = useTranslation();
-    const [featuresOpen, setFeaturesOpen] = useState(true);
+    const { locale, t } = useTranslation();
     const [buyer, setBuyer] = useState({
         first_name: '',
         last_name: '',
         email: '',
         passport_number: '',
     });
-    const seatedPassengers =
-        target.passengers.adults + target.passengers.children;
 
     function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -1931,7 +1812,8 @@ function WingoCheckoutModal({
                             {t('chat.checkout')}
                         </div>
                         <h2 className="mt-1 font-display text-xl font-black">
-                            {cardTitle(target, customer)} · {target.price}
+                            {offerTitle(target, customer, locale)} ·{' '}
+                            {target.price}
                         </h2>
                     </div>
                     <button
@@ -1945,66 +1827,18 @@ function WingoCheckoutModal({
                 </div>
 
                 <div className="grid gap-4 p-5">
-                    <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
-                        <FlightDisplay
-                            card={target}
-                            customer={customer}
-                            expanded={featuresOpen}
-                        />
+                    <div className="grid gap-2">
+                        {target.segments.map((segment, index) => (
+                            <SegmentRow
+                                key={`checkout-segment-${index}`}
+                                segment={segment}
+                            />
+                        ))}
                     </div>
 
-                    <button
-                        type="button"
-                        className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-px hover:border-red-200 hover:bg-red-50"
-                        aria-expanded={featuresOpen}
-                        onClick={() => setFeaturesOpen((current) => !current)}
-                    >
-                        <span className="flex items-center gap-2 text-sm font-black text-slate-950">
-                            <CalendarRange className="size-4 text-red-800" />
-                            {t('chat.featureTable')}
-                        </span>
-                        <ChevronDown
-                            className={`size-4 text-red-800 transition-transform duration-300 ${
-                                featuresOpen ? 'rotate-180' : ''
-                            }`}
-                        />
-                    </button>
-
-                    <div
-                        className={`grid transition-all duration-300 ${
-                            featuresOpen
-                                ? 'grid-rows-[1fr] opacity-100'
-                                : 'grid-rows-[0fr] opacity-0'
-                        }`}
-                    >
-                        <div className="overflow-hidden">
-                            <div className="animate-in duration-300 fade-in-50 slide-in-from-top-1">
-                                <FeatureTable
-                                    featureRows={target.featureRows}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                        <div className="grid gap-2 sm:grid-cols-3">
-                            <SummaryPill
-                                icon={<Luggage className="size-4" />}
-                                label={t('chat.seated')}
-                                value={String(seatedPassengers)}
-                            />
-                            <SummaryPill
-                                icon={<CircleCheck className="size-4" />}
-                                label={t('chat.offers')}
-                                value={String(target.offerIds.length)}
-                            />
-                            <SummaryPill
-                                icon={<CircleDollarSign className="size-4" />}
-                                label={t('chat.total')}
-                                value={target.price}
-                            />
-                        </div>
-                    </div>
+                    <FeatureTable
+                        rows={featureRowsFromCard(target.raw, t, locale)}
+                    />
 
                     <div className="grid animate-in gap-3 fade-in-50 slide-in-from-bottom-1 sm:grid-cols-2">
                         <CheckoutField
@@ -2054,36 +1888,12 @@ function WingoCheckoutModal({
                     <button
                         type="submit"
                         disabled={target.offerIds.length === 0}
-                        className="h-12 rounded-md bg-red-800 text-sm font-black text-white transition-all duration-200 hover:-translate-y-px hover:bg-red-900 hover:shadow-md active:translate-y-0 disabled:bg-slate-300"
+                        className="h-12 rounded-md bg-red-800 text-sm font-black text-white transition-colors hover:bg-red-900 disabled:bg-slate-300"
                     >
                         {t('chat.confirmPurchase')}
                     </button>
                 </div>
             </form>
-        </div>
-    );
-}
-
-function SummaryPill({
-    icon,
-    label,
-    value,
-}: {
-    icon: ReactNode;
-    label: string;
-    value: string;
-}) {
-    return (
-        <div className="flex items-center gap-2 rounded-md bg-white px-3 py-2 transition-transform duration-200 hover:-translate-y-px">
-            <span className="text-red-800">{icon}</span>
-            <span className="min-w-0">
-                <span className="block font-condensed text-[10px] font-black text-slate-400 uppercase">
-                    {label}
-                </span>
-                <span className="block truncate text-sm font-black text-slate-950">
-                    {value}
-                </span>
-            </span>
         </div>
     );
 }
@@ -2105,7 +1915,7 @@ function CheckoutField({
                 {label}
             </span>
             <input
-                className="h-11 rounded-md border border-slate-200 px-3 text-sm font-semibold transition-all duration-200 outline-none focus:-translate-y-px focus:border-red-800 focus:shadow-sm"
+                className="h-11 rounded-md border border-slate-200 px-3 text-sm font-semibold transition-colors outline-none focus:border-red-800"
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
             />

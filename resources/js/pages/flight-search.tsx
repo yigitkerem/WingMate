@@ -2,7 +2,6 @@ import { Head, router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { PublicHeader } from '@/components/public-flight/public-header';
 import {
-    FeatureGrid,
     PopularRoutes,
     PublicFooter,
 } from '@/components/public-flight/public-sections';
@@ -114,12 +113,7 @@ export default function FlightSearch({
                     onChange={update}
                     onQuickSearch={quickSearch}
                 />
-                {!results && (
-                    <>
-                        <PopularRoutes onQuickSearch={quickSearch} />
-                        <FeatureGrid />
-                    </>
-                )}
+                {!results && <PopularRoutes onQuickSearch={quickSearch} />}
                 <PublicFooter />
             </main>
         </>

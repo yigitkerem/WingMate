@@ -1,7 +1,7 @@
 import { createInertiaApp } from '@inertiajs/react';
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
-import { StrictMode, useState } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
@@ -12,6 +12,7 @@ import { initializeTheme } from '@/hooks/use-appearance';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import { wingoLaunchEvent } from '@/lib/flight-search';
 
 declare global {
     interface Window {
@@ -86,6 +87,18 @@ function PageShell({ children }: { children: ReactNode }) {
 
 function GlobalWingoChat() {
     const [isOpen, setIsOpen] = useState(false);
+
+    useEffect(() => {
+        function handleWingoLaunch() {
+            setIsOpen(true);
+        }
+
+        window.addEventListener(wingoLaunchEvent, handleWingoLaunch);
+
+        return () => {
+            window.removeEventListener(wingoLaunchEvent, handleWingoLaunch);
+        };
+    }, []);
 
     return (
         <WingoChat

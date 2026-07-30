@@ -3,11 +3,13 @@ import {
     Briefcase,
     BriefcaseBusiness,
     CheckCircle2,
+    CircleX,
     Clock,
     Info,
     Luggage,
     RotateCcw,
     Star,
+    WandSparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
@@ -35,22 +37,17 @@ type OpenFareCategory = {
 type ResultsPanelProps = {
     results: SearchResults;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
+    onCustomBundle: (flight: FlightResult, cabin: 'economy' | 'business') => void;
     className?: string;
     roundTripStep?: RoundTripStep;
-    roundTripSelection?: {
-        outbound?: RoundTripFareSelection;
-        return?: RoundTripFareSelection;
-    };
-    onRoundTripStepChange?: (step: RoundTripStep) => void;
 };
 
 export function ResultsPanel({
     results,
     onPurchase,
+    onCustomBundle,
     className = '',
     roundTripStep = 'outbound',
-    roundTripSelection = {},
-    onRoundTripStepChange,
 }: ResultsPanelProps) {
     const { t } = useTranslation();
     const [openFareCategory, setOpenFareCategory] =
@@ -81,11 +78,6 @@ export function ResultsPanel({
         <section id="results" className={`mt-8 w-full ${className}`}>
             {isRoundTrip ? (
                 <div className="grid gap-4">
-                    <RoundTripSteps
-                        activeStep={roundTripStep}
-                        selection={roundTripSelection}
-                        onStepChange={onRoundTripStepChange}
-                    />
                     <FlightLeg
                         key={roundTripStep}
                         flights={activeFlights}
@@ -93,6 +85,7 @@ export function ResultsPanel({
                         openFareCategory={openFareCategory}
                         onToggleFareCategory={toggleFareCategory}
                         onPurchase={onPurchase}
+                        onCustomBundle={onCustomBundle}
                     />
                 </div>
             ) : (
@@ -103,6 +96,7 @@ export function ResultsPanel({
                         openFareCategory={openFareCategory}
                         onToggleFareCategory={toggleFareCategory}
                         onPurchase={onPurchase}
+                        onCustomBundle={onCustomBundle}
                     />
                     {results.return.length > 0 && (
                         <FlightLeg
@@ -111,6 +105,7 @@ export function ResultsPanel({
                             openFareCategory={openFareCategory}
                             onToggleFareCategory={toggleFareCategory}
                             onPurchase={onPurchase}
+                            onCustomBundle={onCustomBundle}
                         />
                     )}
                 </div>
@@ -119,7 +114,7 @@ export function ResultsPanel({
     );
 }
 
-function RoundTripSteps({
+export function RoundTripSteps({
     activeStep,
     selection,
     onStepChange,
@@ -134,7 +129,7 @@ function RoundTripSteps({
     const { t } = useTranslation();
 
     return (
-        <div className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 shadow-sm transition-all duration-500 md:grid-cols-2 starting:opacity-0 motion-safe:starting:translate-y-2">
+        <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-sm transition-all duration-500 md:grid-cols-2 starting:opacity-0 motion-safe:starting:translate-y-2">
             <RoundTripStepButton
                 step="outbound"
                 title={t('results.outbound')}
@@ -175,7 +170,7 @@ function RoundTripStepButton({
         <button
             type="button"
             disabled={isDisabled}
-            className={`group flex min-h-24 w-full cursor-pointer items-center justify-between gap-4 rounded-md border p-4 text-left transition-all duration-200 ${
+            className={`group flex min-h-16 w-full cursor-pointer items-center justify-between gap-3 rounded-md border px-3 py-2.5 text-left transition-all duration-200 ${
                 isActive
                     ? 'border-slate-950 bg-slate-950 text-white shadow-sm'
                     : 'border-slate-200 bg-white text-slate-950 hover:border-slate-300 hover:bg-slate-50'
@@ -183,18 +178,11 @@ function RoundTripStepButton({
             onClick={() => onStepChange?.(step)}
         >
             <span className="min-w-0">
-                <span
-                    className={`block text-[11px] font-medium tracking-wide uppercase ${
-                        isActive ? 'text-slate-300' : 'text-slate-500'
-                    }`}
-                >
-                    {t('results.step')} {step === 'outbound' ? '1' : '2'}
-                </span>
-                <span className="mt-1 block text-lg leading-6 font-semibold">
+                <span className="block text-base leading-5 font-semibold">
                     {title}
                 </span>
                 <span
-                    className={`mt-1 block text-sm leading-5 font-medium ${
+                    className={`mt-0.5 block truncate text-xs leading-5 font-medium ${
                         isActive ? 'text-slate-200' : 'text-slate-600'
                     }`}
                 >
@@ -206,7 +194,7 @@ function RoundTripStepButton({
                 </span>
             </span>
             <span
-                className={`grid size-9 shrink-0 place-items-center rounded-md border transition-colors ${
+                className={`grid size-8 shrink-0 place-items-center rounded-md border transition-colors ${
                     isActive
                         ? 'border-white/20 bg-white/10 text-white'
                         : selection
@@ -240,6 +228,7 @@ function FlightLeg({
     openFareCategory,
     onToggleFareCategory,
     onPurchase,
+    onCustomBundle,
 }: {
     flights: FlightResult[];
     emptyMessage: string;
@@ -249,6 +238,7 @@ function FlightLeg({
         cabin: 'economy' | 'business',
     ) => void;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
+    onCustomBundle: (flight: FlightResult, cabin: 'economy' | 'business') => void;
 }) {
     return (
         <div className="grid gap-4">
@@ -268,6 +258,7 @@ function FlightLeg({
                         }
                         onToggleFareCategory={onToggleFareCategory}
                         onPurchase={onPurchase}
+                        onCustomBundle={onCustomBundle}
                     />
                 ))
             )}
@@ -280,6 +271,7 @@ function FlightCard({
     openCabin,
     onToggleFareCategory,
     onPurchase,
+    onCustomBundle,
 }: {
     flight: FlightResult;
     openCabin: 'economy' | 'business' | null;
@@ -288,6 +280,7 @@ function FlightCard({
         cabin: 'economy' | 'business',
     ) => void;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
+    onCustomBundle: (flight: FlightResult, cabin: 'economy' | 'business') => void;
 }) {
     const fares = faresForFlight(flight);
     const economyFares = cabinFares(fares, 'economy');
@@ -318,6 +311,7 @@ function FlightCard({
                 flight={flight}
                 isOpen={openCabin !== null && selectedFares.length > 0}
                 onPurchase={onPurchase}
+                onCustomBundle={onCustomBundle}
             />
         </article>
     );
@@ -341,7 +335,7 @@ function FlightTimeline({ flight }: { flight: FlightResult }) {
                         <span className="size-2 rounded-full border border-slate-500 bg-white" />
                         <div className="h-px flex-1 bg-slate-300" />
                         <img
-                            src="/assets/thy-emblem.svg"
+                            src="/assets/tk-mark.svg"
                             className="mx-2 size-7 shrink-0 object-contain"
                             alt="Turkish Airlines"
                         />
@@ -405,7 +399,7 @@ function FareAction({
     isOpen: boolean;
     onOpen: () => void;
 }) {
-    const { locale, t } = useTranslation();
+    const { t } = useTranslation();
     const isBusiness = cabin === 'business';
     const label = isBusiness ? t('results.business') : t('results.economy');
     const startingFare = preferredFare(fares);
@@ -430,7 +424,7 @@ function FareAction({
                         isOpen ? 'text-slate-300' : 'text-slate-500'
                     }`}
                 >
-                    {fareStartingLabel(label, price, locale, t)}
+                    {label}
                 </span>
                 {isBusiness && (
                     <BriefcaseBusiness
@@ -463,19 +457,6 @@ function FareAction({
             </div>
         </button>
     );
-}
-
-function fareStartingLabel(
-    label: string,
-    price: string,
-    locale: 'en' | 'tr',
-    t: (key: 'results.from') => string,
-): string {
-    if (locale === 'tr') {
-        return `${label} başlangıç fiyatı: ${price}`;
-    }
-
-    return `${label} ${t('results.from')} ${price}`;
 }
 
 function faresForFlight(flight: FlightResult): Fare[] {
@@ -529,14 +510,16 @@ function PackageTable({
     flight,
     isOpen,
     onPurchase,
+    onCustomBundle,
 }: {
     cabin: 'economy' | 'business';
     fares: Fare[];
     flight: FlightResult;
     isOpen: boolean;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
+    onCustomBundle: (flight: FlightResult, cabin: 'economy' | 'business') => void;
 }) {
-    const { t } = useTranslation();
+    const { locale, t } = useTranslation();
     const label =
         cabin === 'business' ? t('results.business') : t('results.economy');
     const comparisonRows: ComparisonRowDefinition[] = [
@@ -544,36 +527,46 @@ function PackageTable({
             label: t('results.cabinBag'),
             helper: t('results.cabinBagHelper'),
             icon: <Briefcase className="size-4" />,
-            render: (fare) => `${fare.cabin_baggage_kg ?? 0} kg`,
+            render: (fare) =>
+                allowanceComparisonValue(
+                    fare.cabin_baggage_kg ?? 0,
+                    t('results.notIncluded'),
+                ),
         },
         {
             label: t('results.checkedBag'),
             helper: t('results.checkedBagHelper'),
             icon: <Luggage className="size-4" />,
             render: (fare) =>
-                (fare.checked_baggage_kg ?? 0) > 0
-                    ? `${fare.checked_baggage_kg} kg`
-                    : t('results.notIncluded'),
+                allowanceComparisonValue(
+                    fare.checked_baggage_kg ?? 0,
+                    t('results.notIncluded'),
+                ),
         },
         {
             label: t('results.seatSelection'),
             helper: t('results.seatSelectionHelper'),
             icon: <CheckCircle2 className="size-4" />,
             render: (fare) =>
-                fare.seat_selection_free
-                    ? t('results.complimentary')
-                    : t('results.paid'),
+                booleanComparisonValue(
+                    fare.seat_selection_free ?? false,
+                    t('results.complimentary'),
+                    t('results.paid'),
+                ),
         },
         {
             label: t('results.change'),
             helper: t('results.changeHelper'),
             icon: <RotateCcw className="size-4" />,
             render: (fare) =>
-                fareRuleLabel(
-                    'change',
-                    fare.change_fee_usd,
-                    fare.latest_change_hours,
-                    fare.change_fee_percent,
+                fareRuleComparisonValue(
+                    fareRuleLabel(
+                        'change',
+                        fare.change_fee_usd,
+                        fare.latest_change_hours,
+                        fare.change_fee_percent,
+                        locale,
+                    ),
                 ),
         },
         {
@@ -581,11 +574,14 @@ function PackageTable({
             helper: t('results.refundHelper'),
             icon: <Star className="size-4" />,
             render: (fare) =>
-                fareRuleLabel(
-                    'refund',
-                    fare.refund_fee_usd,
-                    fare.latest_refund_hours,
-                    fare.refund_fee_percent,
+                fareRuleComparisonValue(
+                    fareRuleLabel(
+                        'refund',
+                        fare.refund_fee_usd,
+                        fare.latest_refund_hours,
+                        fare.refund_fee_percent,
+                        locale,
+                    ),
                 ),
         },
     ];
@@ -600,26 +596,22 @@ function PackageTable({
             aria-hidden={!isOpen}
         >
             <div className="min-h-0 overflow-hidden border-t border-slate-200 bg-white">
-                <div className="overflow-x-auto bg-white">
-                    <table
-                        className="w-full table-fixed text-left text-sm"
-                        style={{
-                            minWidth: `${220 + fares.length * 230}px`,
-                        }}
-                    >
+                <div className="bg-white">
+                    <table className="w-full table-fixed text-left text-sm">
                         <colgroup>
-                            <col className="w-[220px]" />
+                            <col className="w-[21%]" />
                             {fares.map((fare, index) => (
                                 <col
                                     key={`col-${fare.id ?? fare.uuid ?? fare.class ?? index}`}
-                                    className="w-[230px]"
+                                    className="w-auto"
                                 />
                             ))}
+                            <col className="w-[25%]" />
                         </colgroup>
                         <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50">
-                                <th className="px-4 py-4 align-bottom">
-                                    <span className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+                            <tr className="border-b border-slate-300 bg-slate-100">
+                                <th className="bg-slate-950 px-4 py-4 align-bottom text-white">
+                                    <span className="text-xs font-semibold tracking-wide text-white/75 uppercase">
                                         {t('results.compare')}
                                     </span>
                                 </th>
@@ -632,7 +624,7 @@ function PackageTable({
                                     return (
                                         <th
                                             key={`package-${fare.id ?? fare.uuid ?? fare.class ?? index}`}
-                                            className="border-l border-slate-200 px-4 py-4 align-bottom"
+                                            className="border-l border-slate-300 px-4 py-4 align-bottom"
                                         >
                                             {lowInventory && (
                                                 <span className="mb-3 inline-flex rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-800">
@@ -658,31 +650,46 @@ function PackageTable({
                                         </th>
                                     );
                                 })}
+                                <th className="border-l border-red-950 bg-red-950 px-4 py-4 align-bottom text-white">
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-red-800 px-2 py-1 text-[11px] font-black text-white">
+                                        <WandSparkles className="size-3.5" />
+                                        Wingo
+                                    </span>
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
-                            {comparisonRows.map((row) => (
+                            {comparisonRows.map((row, index) => (
                                 <PackageComparisonRow
                                     key={row.label}
                                     row={row}
                                     fares={fares}
+                                    rowIndex={index}
+                                    customCell={
+                                        index === 0 ? (
+                                            <WingoCustomBundleCell
+                                                cabin={cabin}
+                                                flight={flight}
+                                                rowSpan={comparisonRows.length + 1}
+                                                onCustomBundle={onCustomBundle}
+                                            />
+                                        ) : null
+                                    }
                                 />
                             ))}
-                        </tbody>
-                        <tfoot>
-                            <tr className="border-t border-slate-200 bg-white">
-                                <td className="px-4 py-4 text-xs font-medium tracking-wide text-slate-500 uppercase">
+                            <tr className="border-t border-slate-300 bg-slate-50">
+                                <td className="px-4 py-4 text-xs font-semibold tracking-wide text-slate-700 uppercase">
                                     {t('results.choosePackage')}
                                 </td>
                                 {fares.map((fare, index) => (
                                     <td
                                         key={`select-${fare.id ?? fare.uuid ?? fare.class ?? index}`}
-                                        className="border-l border-slate-200 px-4 py-4"
+                                        className="border-l border-slate-300 px-4 py-4"
                                     >
                                         <button
                                             type="button"
                                             disabled={!fare.available}
-                                            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-red-800 px-3 text-sm font-semibold text-white transition-all duration-200 hover:bg-red-950 disabled:bg-slate-100 disabled:text-slate-400"
+                                            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-red-800 px-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-red-950 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
                                             onClick={() =>
                                                 onPurchase(flight, fare)
                                             }
@@ -692,7 +699,7 @@ function PackageTable({
                                     </td>
                                 ))}
                             </tr>
-                        </tfoot>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -704,21 +711,29 @@ type ComparisonRowDefinition = {
     label: string;
     helper: string;
     icon: ReactNode;
-    render: (fare: Fare) => string;
+    render: (fare: Fare) => ReactNode;
 };
 
 function PackageComparisonRow({
     row,
     fares,
+    rowIndex,
+    customCell,
 }: {
     row: ComparisonRowDefinition;
     fares: Fare[];
+    rowIndex: number;
+    customCell: ReactNode;
 }) {
     return (
-        <tr className="border-b border-slate-100 last:border-b-0">
-            <td className="bg-slate-50 px-4 py-3 align-middle">
+        <tr
+            className={`border-b border-slate-200 last:border-b-0 ${
+                rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'
+            }`}
+        >
+            <td className="bg-slate-100 px-4 py-3 align-middle">
                 <div className="flex items-center gap-3">
-                    <span className="grid size-7 shrink-0 place-items-center rounded-md border border-slate-200 bg-white text-slate-600">
+                    <span className="grid size-7 shrink-0 place-items-center rounded-md border border-red-100 bg-red-50 text-red-800">
                         {row.icon}
                     </span>
                     <span className="flex min-w-0 items-center gap-1.5 leading-none">
@@ -743,12 +758,132 @@ function PackageComparisonRow({
             {fares.map((fare, index) => (
                 <td
                     key={`${row.label}-${fare.id ?? fare.uuid ?? fare.class ?? index}`}
-                    className="border-l border-slate-200 px-4 py-3 align-middle text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50"
+                    className="border-l border-slate-300 px-4 py-3 align-middle text-sm font-medium text-slate-900 transition-colors duration-200 hover:bg-red-50/45"
                 >
                     {row.render(fare)}
                 </td>
             ))}
+            {customCell}
         </tr>
+    );
+}
+
+function WingoCustomBundleCell({
+    cabin,
+    flight,
+    rowSpan,
+    onCustomBundle,
+}: {
+    cabin: 'economy' | 'business';
+    flight: FlightResult;
+    rowSpan: number;
+    onCustomBundle: (flight: FlightResult, cabin: 'economy' | 'business') => void;
+}) {
+    const { t } = useTranslation();
+
+    return (
+        <td
+            rowSpan={rowSpan}
+            className="border-l border-red-950 bg-red-950 px-4 py-5 align-stretch text-white"
+        >
+            <div className="flex h-full min-h-72 flex-col justify-between">
+                <div>
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-black tracking-wide text-red-100 uppercase">
+                        <WandSparkles className="size-3.5" />
+                        Wingo
+                    </span>
+                    <div className="mt-4 font-display text-lg leading-6 font-black text-white">
+                        {t('results.customBundlePrompt')}
+                    </div>
+                    <p className="mt-2 text-xs leading-5 font-semibold text-red-50">
+                        {t('results.customBundleHelper')}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-white px-4 text-sm font-black text-red-950 shadow-lg transition-all duration-200 hover:-translate-y-px hover:bg-red-50 hover:shadow-xl active:translate-y-0"
+                    onClick={() => onCustomBundle(flight, cabin)}
+                >
+                    <WandSparkles className="size-4" />
+                    {t('results.customBundleButton')}
+                </button>
+            </div>
+        </td>
+    );
+}
+
+type ComparisonValueTone = 'positive' | 'negative' | 'neutral';
+
+function allowanceComparisonValue(
+    weight: number,
+    notIncludedLabel: string,
+): ReactNode {
+    if (weight > 0) {
+        return (
+            <ComparisonValue tone="positive">{`${weight} kg`}</ComparisonValue>
+        );
+    }
+
+    return (
+        <ComparisonValue tone="negative">{notIncludedLabel}</ComparisonValue>
+    );
+}
+
+function booleanComparisonValue(
+    value: boolean,
+    positiveLabel: string,
+    negativeLabel: string,
+): ReactNode {
+    return (
+        <ComparisonValue tone={value ? 'positive' : 'negative'}>
+            {value ? positiveLabel : negativeLabel}
+        </ComparisonValue>
+    );
+}
+
+function fareRuleComparisonValue(value: string): ReactNode {
+    const normalizedValue = value.toLowerCase();
+
+    if (
+        normalizedValue.startsWith('no change') ||
+        normalizedValue.startsWith('no refund') ||
+        normalizedValue.includes('izin verilmez') ||
+        normalizedValue.includes('iade edilmez')
+    ) {
+        return <ComparisonValue tone="negative">{value}</ComparisonValue>;
+    }
+
+    if (
+        normalizedValue.startsWith('no fee') ||
+        normalizedValue.includes('ücretsiz')
+    ) {
+        return <ComparisonValue tone="positive">{value}</ComparisonValue>;
+    }
+
+    return <ComparisonValue tone="neutral">{value}</ComparisonValue>;
+}
+
+function ComparisonValue({
+    children,
+    tone = 'neutral',
+}: {
+    children: ReactNode;
+    tone?: ComparisonValueTone;
+}) {
+    const toneClassName = {
+        positive: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+        negative: 'border-slate-300 bg-slate-100 text-slate-700',
+        neutral: 'border-slate-200 bg-white text-slate-900',
+    }[tone];
+
+    return (
+        <span
+            className={`inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 font-semibold shadow-[0_1px_0_rgba(15,23,42,0.04)] ${toneClassName}`}
+        >
+            {tone === 'positive' && <CheckCircle2 className="size-3.5" />}
+            {tone === 'negative' && <CircleX className="size-3.5" />}
+            <span>{children}</span>
+        </span>
     );
 }
 

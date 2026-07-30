@@ -19,18 +19,10 @@ export default function Welcome() {
                     <header className="flex items-center justify-between gap-4">
                         <Link href={home()} className="flex items-center gap-3">
                             <img
-                                src="/assets/thy-emblem.svg"
-                                className="h-12 w-12 rounded-md bg-white object-contain p-1"
+                                src="/assets/oneliner_whitetext.svg"
+                                className="h-8 w-auto object-contain sm:h-10"
                                 alt="Turkish Airlines logo"
                             />
-                            <span className="leading-none">
-                                <span className="block font-display text-[22px] font-black tracking-normal">
-                                    TURKISH AIRLINES
-                                </span>
-                                <span className="mt-1 block font-condensed text-[11px] font-bold tracking-[0.25em] text-white/70">
-                                    WIDEN YOUR WORLD
-                                </span>
-                            </span>
                         </Link>
 
                         <nav className="flex items-center gap-2">
