@@ -44,6 +44,7 @@ class AirlineDemoSeeder extends Seeder
         'FRA' => ['name' => 'Frankfurt Airport', 'city' => 'Frankfurt', 'country' => 'DE', 'timezone' => 'Europe/Berlin', 'icao' => 'EDDF'],
         'DXB' => ['name' => 'Dubai International Airport', 'city' => 'Dubai', 'country' => 'AE', 'timezone' => 'Asia/Dubai', 'icao' => 'OMDB'],
         'JFK' => ['name' => 'John F. Kennedy International Airport', 'city' => 'New York', 'country' => 'US', 'timezone' => 'America/New_York', 'icao' => 'KJFK'],
+        'HND' => ['name' => 'Tokyo Haneda Airport', 'city' => 'Tokyo', 'country' => 'JP', 'timezone' => 'Asia/Tokyo', 'icao' => 'RJTT'],
         'SIN' => ['name' => 'Singapore Changi Airport', 'city' => 'Singapore', 'country' => 'SG', 'timezone' => 'Asia/Singapore', 'icao' => 'WSSS'],
     ];
 
@@ -63,6 +64,8 @@ class AirlineDemoSeeder extends Seeder
         ['DXB', 'IST', 300, 295, ['03:05', '12:25', '20:50']],
         ['IST', 'JFK', 620, 660, ['08:25', '14:05']],
         ['JFK', 'IST', 590, 570, ['00:20', '19:00']],
+        ['IST', 'HND', 740, 690, ['01:50']],
+        ['HND', 'IST', 710, 810, ['21:45']],
         ['IST', 'SIN', 690, 650, ['02:10']],
         ['SIN', 'IST', 660, 680, ['10:15']],
         ['SAW', 'ADB', 72, 65, ['08:00', '13:35', '20:20']],
@@ -284,7 +287,7 @@ class AirlineDemoSeeder extends Seeder
             ['London advance saver', 'route_discount', 56, true, "route == 'IST-LHR' && days_to_departure >= 14", [['type' => 'fixed_discount', 'value' => 15, 'label' => 'London advance saving']]],
             ['Dubai airport convenience', 'airport_service', 58, true, "destination == 'DXB'", [['type' => 'include_service', 'service_code' => 'FAST_TRACK', 'label' => 'Dubai fast track']]],
             ['IST-JFK market surcharge', 'route_surcharge', 60, true, "route == 'IST-JFK'", [['type' => 'percentage_surcharge', 'value' => 6, 'label' => 'Long-haul demand']]],
-            ['Long-haul Wi-Fi starter', 'longhaul_wifi', 62, true, "route == 'IST-JFK' || route == 'JFK-IST' || route == 'IST-SIN' || route == 'SIN-IST'", [['type' => 'include_service', 'service_code' => 'WIFI', 'value' => ['amount' => 250, 'data_mb' => 250], 'label' => 'Long-haul Wi-Fi starter']]],
+            ['Long-haul Wi-Fi starter', 'longhaul_wifi', 62, true, "route == 'IST-JFK' || route == 'JFK-IST' || route == 'IST-HND' || route == 'HND-IST' || route == 'IST-SIN' || route == 'SIN-IST'", [['type' => 'include_service', 'service_code' => 'WIFI', 'value' => ['amount' => 250, 'data_mb' => 250], 'label' => 'Long-haul Wi-Fi starter']]],
             ['Business Wi-Fi upgrade', 'business_wifi', 64, true, "cabin_code == 'BUSINESS'", [['type' => 'include_service', 'service_code' => 'WIFI_5GB', 'value' => ['amount' => 5120, 'data_mb' => 5120], 'label' => 'Business Wi-Fi upgrade']]],
             ['BusinessPrime chauffeur fare', 'premium_fixed', 90, false, "bundle_code == 'BUSINESSPRIME' && route == 'IST-JFK' && days_to_departure >= 21", [['type' => 'fixed_fare', 'value' => 1599, 'label' => 'BusinessPrime long-haul fixed fare']]],
         ])->each(fn (array $rule): PricingRule => PricingRule::query()->create([
@@ -448,7 +451,7 @@ class AirlineDemoSeeder extends Seeder
 
     private function aircraftFor(string $origin, string $destination): string
     {
-        return in_array($origin, ['JFK', 'SIN', 'DXB'], true) || in_array($destination, ['JFK', 'SIN', 'DXB'], true)
+        return in_array($origin, ['JFK', 'HND', 'SIN', 'DXB'], true) || in_array($destination, ['JFK', 'HND', 'SIN', 'DXB'], true)
             ? fake()->randomElement(['Airbus A330-300', 'Airbus A350-900', 'Boeing 787-9'])
             : fake()->randomElement(['Airbus A320neo', 'Airbus A321neo', 'Boeing 737 MAX 8']);
     }

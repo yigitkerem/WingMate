@@ -2,8 +2,10 @@
 
 namespace App\Chatbot;
 
+use App\Models\Airport;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class ChatbotAgent
@@ -88,10 +90,16 @@ class ChatbotAgent
         for ($iteration = 0; $iteration < self::MAX_TOOL_ITERATIONS; $iteration++) {
             try {
                 $response = $this->client->chat($messages, $tools);
-            } catch (\Throwable) {
-                $reply = $this->unavailableReply($language);
+            } catch (\Throwable $exception) {
+                Log::warning('Wingo Azure chat call failed.', [
+                    'session_id' => $sessionId,
+                    'iteration' => $iteration,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                $reply = $this->fallbackReply($language, $toolTrace);
                 $messages[] = ['role' => 'assistant', 'content' => $reply];
-                $this->sessionStore->put($sessionId, $messages, $pendingPurchase);
+                $this->sessionStore->put($sessionId, $this->persistableMessages($messages), $pendingPurchase);
 
                 return ['reply' => $reply, 'tool_trace' => $this->publicToolTrace($toolTrace)];
             }
@@ -113,7 +121,7 @@ class ChatbotAgent
             if ($toolCalls === []) {
                 $reply = $this->sanitizeReply((string) ($message['content'] ?? ''));
                 $messages[count($messages) - 1]['content'] = $reply;
-                $this->sessionStore->put($sessionId, $messages, $pendingPurchase);
+                $this->sessionStore->put($sessionId, $this->persistableMessages($messages), $pendingPurchase);
 
                 return ['reply' => $reply, 'tool_trace' => $this->publicToolTrace($toolTrace)];
             }
@@ -121,7 +129,22 @@ class ChatbotAgent
             foreach ($toolCalls as $toolCall) {
                 $toolName = (string) data_get($toolCall, 'function.name');
                 $arguments = $this->decodeArguments((string) data_get($toolCall, 'function.arguments', '{}'));
-                $toolResult = $this->toolbox->dispatch($toolName, $arguments, $pendingPurchase, $userConfirmed, $user, $meta);
+
+                try {
+                    $toolResult = $this->toolbox->dispatch($toolName, $arguments, $pendingPurchase, $userConfirmed, $user, $meta);
+                } catch (\Throwable $exception) {
+                    Log::warning('Wingo tool call failed.', [
+                        'session_id' => $sessionId,
+                        'tool' => $toolName,
+                        'message' => $exception->getMessage(),
+                    ]);
+
+                    $toolResult = [
+                        'result' => ['error' => 'tool_failed', 'message' => $exception->getMessage()],
+                        'pending_purchase' => $pendingPurchase,
+                    ];
+                }
+
                 $pendingPurchase = $toolResult['pending_purchase'];
                 $result = $toolResult['result'];
 
@@ -139,36 +162,94 @@ class ChatbotAgent
             }
         }
 
-        $reply = $this->unavailableReply($language);
+        $reply = $this->fallbackReply($language, $toolTrace);
         $messages[] = ['role' => 'assistant', 'content' => $reply];
-        $this->sessionStore->put($sessionId, $messages, $pendingPurchase);
+        $this->sessionStore->put($sessionId, $this->persistableMessages($messages), $pendingPurchase);
 
         return ['reply' => $reply, 'tool_trace' => $this->publicToolTrace($toolTrace)];
+    }
+
+    /**
+     * Reduce a working message list (which may contain reconstructed tool_calls
+     * and tool results) to a clean, replayable conversation. Only the base system
+     * prompt plus user/assistant text turns are persisted, so we never re-send
+     * fragile tool-call/tool sequences on later turns (a common source of 400s).
+     *
+     * @param  array<int, array<string, mixed>>  $messages
+     * @return array<int, array<string, mixed>>
+     */
+    private function persistableMessages(array $messages): array
+    {
+        $persistable = [];
+        $keptSystemPrompt = false;
+
+        foreach ($messages as $message) {
+            $role = $message['role'] ?? null;
+
+            if ($role === 'system') {
+                if (! $keptSystemPrompt) {
+                    $persistable[] = ['role' => 'system', 'content' => (string) ($message['content'] ?? '')];
+                    $keptSystemPrompt = true;
+                }
+
+                continue;
+            }
+
+            if ($role === 'user') {
+                $persistable[] = ['role' => 'user', 'content' => (string) ($message['content'] ?? '')];
+
+                continue;
+            }
+
+            if ($role === 'assistant') {
+                $content = is_string($message['content'] ?? null) ? trim($message['content']) : '';
+
+                if ($content === '') {
+                    continue;
+                }
+
+                $persistable[] = ['role' => 'assistant', 'content' => $content];
+            }
+        }
+
+        return $persistable;
     }
 
     private function systemPrompt(): string
     {
         $today = Carbon::today()->toDateString();
+        $airports = $this->availableAirportsSummary();
 
         return <<<PROMPT
 You are Wingo, a warm, friendly airline assistant that builds tailored flight quotes through conversation. Today's date: {$today}.
+
+# AIRPORTS IN THE SYSTEM (this is the COMPLETE list; you may NEVER name, offer or use any airport that is not below)
+{$airports}
+- If a city is not in this list, tell the user we do not fly there yet — do not invent an airport. If a city maps to exactly one airport here, use it (briefly confirm). If a city has several here (e.g. Istanbul), ask_follow_up listing exactly those airports and nothing else.
 
 # CORE PERSONALITY
 - Be conversational, kind and human. You are talking WITH the traveller, not at them.
 - NEVER jump straight to an offer. Always understand the trip first, then ask, then (only when confident) present.
 - One short question at a time. Keep replies brief and natural.
+- NEVER ask permission to show, present or "prepare" an offer (e.g. "Shall I show them?", "Would you like me to show the offer?"). The answer is always yes. When you are ready to show, just call present_offers and show it. Asking to show wastes a turn and is bad UX.
+
+# BE GENEROUS WITH INFERENCE
+- Read intent from everything the traveller said, including earlier turns, and fill obvious slots yourself instead of asking.
+- Party size: "honeymoon", "with my wife/husband/partner", "couple", "the two of us", "eşimle" → 2 adults. "Solo", "just me" → 1 adult. "Family" with details → use them. Only ask about passengers when it is genuinely unclear.
+- Dates: if the traveller says the date does not matter / any day / "flexible" / "whenever" → DO NOT ask which day. Pick the best available date yourself (e.g. the soonest suitable one), proceed, and simply mention the date you chose.
+- Only ask a question when a detail is truly missing AND you cannot reasonably infer it. Prefer sensible defaults over interrogation.
 
 # WHAT YOU NEED BEFORE ANY OFFER (never assume, always confirm)
 1. Specific origin AIRPORT and destination AIRPORT (a city is NOT an airport).
 2. Whether it is one-way or round-trip.
-3. The exact date(s).
-4. Passenger counts (adults, children, babies).
-If ANY of these is missing or uncertain, ASK. Do not guess. Do not fabricate.
+3. The date(s). Resolve any relative date (today, tomorrow, this weekend) to a concrete calendar date using today's date. Confirm a specific date the traveller gave; but if they said the date does not matter or they are flexible, pick a sensible date yourself and just tell them which one — do not ask.
+4. Passenger counts (adults, children, babies). Infer from wording where possible (see BE GENEROUS WITH INFERENCE) instead of asking.
+If a detail is genuinely missing and cannot be reasonably inferred, ASK. Otherwise proceed. Never fabricate flights, prices or airports.
 
 # ASKING QUESTIONS (very important)
 - Whenever the answer is a choice between a few options, you MUST call ask_follow_up with 2-4 short "choices". These render as buttons; the user's text box is hidden until they pick. Do NOT write choices as plain text.
 - Only ask fully open questions (no choices) when a free-text answer is genuinely required.
-- Multiple airports for a city: call airports_for_city, and if more than one airport serves it, ask_follow_up listing each airport as a specific choice (e.g. "Heathrow (LHR)", "Gatwick (LGW)"). Never say a vague "which airport?" without options.
+- Resolving a city to an airport: the ONLY valid airports are the ones in the "AIRPORTS IN THE SYSTEM" list above. Confirm with airports_for_city, and offer ONLY airports that appear in that list / tool result. NEVER invent, guess, or add real-world airports (e.g. do not offer Orly, Gatwick, Stansted, Luton — they are not in our system). If a city has one airport, use it and briefly confirm. If it has several (only Istanbul: IST and SAW), ask_follow_up listing exactly those. If the city is not in the list, tell the traveller we do not fly there.
 - Multiple flights on the same day: after search_flights, if several flights match and the user has not chosen, ask_follow_up listing the departure times as choices, then build for the chosen one (pass flight_number to build_dynamic_bundles).
 
 # USING CONTEXT (soft hints only)
@@ -181,8 +262,13 @@ If ANY of these is missing or uncertain, ASK. Do not guess. Do not fabricate.
 
 # BUILDING & PRESENTING OFFERS
 - Use list_customizations to know every service, price and constraint. Combine any services in any valid combination via build_dynamic_bundles (custom_mode for mix-and-match). Prices, availability and rules come ONLY from tools.
-- To show offers, call present_offers with the real offer_ids you obtained. Maximum TWO offers; sometimes one; sometimes none.
-- Every offer needs its own short, personal memo saying why it fits this traveller. If you show a second offer, its memo must explain how it differs from the first.
+- SHOWING OFFERS IS AUTOMATIC AND EXPECTED — it is NOT booking. The moment the trip is fully confirmed (airports, date, trip type, passengers) and you have found fares, call present_offers in that SAME turn. Never stop at "shall I show them?" or "I'll prepare them" — just show them.
+- To show offers you MUST call present_offers with real offer_ids obtained from build_dynamic_bundles (or search_flights). NEVER tell the user an offer is "ready", "prepared", "built", "set aside" or that you will "reserve/hold/show" it WITHOUT calling present_offers in the SAME turn. If you have offer_ids, call present_offers now — do not merely describe them.
+- If your previous message promised/offered to show or prepare anything, OR the user replies with any confirmation ("evet", "olur", "göster", "yes", "show", "please do"), you MUST call present_offers this turn. Never answer with only text when offers are due.
+- When the user asks to see, show, compare, choose, or customise offers, call present_offers immediately — do not ask which one to show first.
+- Do not use words like "reserve" or "hold" for showing. Booking happens solely through quote_purchase then commit_purchase after explicit approval.
+- Maximum TWO offers; sometimes one; sometimes none.
+- Every offer needs its own short, personal memo saying why it fits this traveller. If you show a second offer, its memo must explain how it differs from the first. If an offer was tailored/custom-built for this traveller (custom services added or removed), say so in its memo so they know it is personalised rather than a standard package.
 - For a round trip, pass both leg offer_ids together in one offer entry.
 - After present_offers, your final text message is ONE short, warm, personal lead line (e.g. "Here's a lovely, easy way to do this trip."). No prices, no feature lists, no package jargon in text — the cards show all of that.
 - Never present an offer while any trip detail is still uncertain.
@@ -295,6 +381,49 @@ PROMPT;
         return self::SOURCE_DIRECTIVE.($language === 'en'
             ? ' (Interface language: English - if the user writes in English, reply in English.)'
             : ' (Interface language: Turkish.)');
+    }
+
+    private function availableAirportsSummary(): string
+    {
+        $summary = Airport::query()
+            ->orderBy('city')
+            ->orderBy('iata_code')
+            ->get(['iata_code', 'city', 'name'])
+            ->map(fn (Airport $airport): string => "- {$airport->city}: {$airport->name} ({$airport->iata_code})")
+            ->implode("\n");
+
+        return $summary !== '' ? $summary : '- (no airports configured)';
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $toolTrace
+     */
+    private function fallbackReply(string $language, array $toolTrace): string
+    {
+        $reversed = collect($toolTrace)->reverse();
+
+        $presentedOffers = $reversed->contains(
+            fn (array $trace): bool => ($trace['tool'] ?? null) === 'present_offers'
+                && ! isset($trace['result']['error'])
+        );
+
+        if ($presentedOffers) {
+            return $language === 'tr'
+                ? 'Senin için hazırladığım seçenekler bunlar.'
+                : 'Here are the options I put together for you.';
+        }
+
+        $pendingQuestion = $reversed->first(
+            fn (array $trace): bool => ($trace['tool'] ?? null) === 'ask_follow_up'
+                && is_string($trace['result']['question'] ?? null)
+                && trim((string) $trace['result']['question']) !== ''
+        );
+
+        if (is_array($pendingQuestion)) {
+            return trim((string) $pendingQuestion['result']['question']);
+        }
+
+        return $this->unavailableReply($language);
     }
 
     private function unavailableReply(string $language): string

@@ -220,6 +220,46 @@ test('seeded premium fares expose rich flexibility rules', function () {
     }
 });
 
+test('demo seeder creates searchable fares between Istanbul and Haneda', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        $istanbul = Airport::query()->where('iata_code', 'IST')->firstOrFail();
+        $haneda = Airport::query()->where('iata_code', 'HND')->firstOrFail();
+        $searchFlights = app(SearchFlights::class);
+
+        $outboundFlights = $searchFlights->execute(
+            originAirportId: $istanbul->id,
+            destinationAirportId: $haneda->id,
+            date: '2026-07-29',
+            mode: 'basic',
+            seatPassengers: 1,
+            tripType: 'one_way',
+        );
+        $returnFlights = $searchFlights->execute(
+            originAirportId: $haneda->id,
+            destinationAirportId: $istanbul->id,
+            date: '2026-07-29',
+            mode: 'basic',
+            seatPassengers: 1,
+            tripType: 'one_way',
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    $expectedPackages = ['ECOFLY', 'EXTRAFLY', 'PRIMEFLY', 'BUSINESSFLY', 'BUSINESSPRIME'];
+
+    expect($outboundFlights)->toHaveCount(1)
+        ->and($outboundFlights[0]['destination']['code'])->toBe('HND')
+        ->and(collect($outboundFlights[0]['fares'])->pluck('package_code')->all())->toBe($expectedPackages)
+        ->and($returnFlights)->toHaveCount(1)
+        ->and($returnFlights[0]['destination']['code'])->toBe('IST')
+        ->and(collect($returnFlights[0]['fares'])->pluck('package_code')->all())->toBe($expectedPackages);
+});
+
 test('demo seeder creates a richer rule catalogue with service incentives', function () {
     Carbon::setTestNow('2026-07-29 10:00:00');
 

@@ -163,13 +163,184 @@ test('present_offers persists the personalized memo into the offer context and r
         ->and($response['tool_trace'])->toHaveCount(1)
         ->and($response['tool_trace'][0]['tool'])->toBe('present_offers')
         ->and($response['tool_trace'][0]['result']['offers'][0]['memo'])->toBe('Perfect for your quick London hop.')
-        ->and($response['tool_trace'][0]['result']['offers'][0]['offer_ids'])->toBe($offerIds);
+        ->and($response['tool_trace'][0]['result']['offers'][0]['offer_ids'])->toBe($offerIds)
+        ->and($response['tool_trace'][0]['result']['offers'][0])->toHaveKey('cabin')
+        ->and($response['tool_trace'][0]['result']['offers'][0]['title'])->not->toBe('');
 
     $offer = Offer::query()->find($offerIds[0]);
 
     expect($offer->context['wingo']['memo'])->toBe('Perfect for your quick London hop.')
         ->and($offer->context['wingo']['consent'])->toBeTrue()
         ->and($offer->context['wingo']['page'])->toBe('flight-search');
+});
+
+test('agent grounds the model with the exact airport list from the database', function () {
+    $this->seed(AirlineDemoSeeder::class);
+
+    $fake = new FakeAzureChatClient;
+    $this->app->instance(AzureChatClient::class, $fake);
+    $fake->pushMessage('Where would you like to fly?');
+
+    app(ChatbotAgent::class)->send('airport-ground-session', 'hi', 'ours', 'en', null, true);
+
+    $systemPrompt = $fake->sentText();
+
+    expect($systemPrompt)->toContain('AIRPORTS IN THE SYSTEM')
+        ->and($systemPrompt)->toContain('Paris')
+        ->and($systemPrompt)->toContain('(CDG)')
+        ->and($systemPrompt)->toContain('(IST)')
+        ->and($systemPrompt)->not->toContain('(ORY)');
+});
+
+test('present_offers card exposes a per-leg total for price breakdowns', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        $build = app(ChatbotToolbox::class)->dispatch('build_dynamic_bundles', [
+            'origin' => 'IST',
+            'destination' => 'LHR',
+            'date' => '2026-07-29',
+            'adults' => 2,
+        ], null, false, null);
+
+        $offerIds = $build['result']['recommended_picks'][0]['offer_ids'];
+
+        $fake = new FakeAzureChatClient;
+        $this->app->instance(AzureChatClient::class, $fake);
+        $fake->pushToolCall('present_offers', [
+            'offers' => [['offer_ids' => $offerIds, 'memo' => 'Room for two.']],
+        ]);
+        $fake->pushMessage('Here you go.');
+
+        $response = app(ChatbotAgent::class)->send('leg-total-session', 'show me an offer', 'ours', 'en', null, true);
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    $segment = $response['tool_trace'][0]['result']['offers'][0]['segments'][0];
+
+    expect($segment)->toHaveKey('total_price_usd')
+        ->and($segment['total_price_usd'])->toBeGreaterThan(0);
+});
+
+test('agent shows a friendly lead line when the model hiccups after presenting offers', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        $build = app(ChatbotToolbox::class)->dispatch('build_dynamic_bundles', [
+            'origin' => 'IST',
+            'destination' => 'LHR',
+            'date' => '2026-07-29',
+            'adults' => 1,
+        ], null, false, null);
+
+        $offerIds = $build['result']['recommended_picks'][0]['offer_ids'];
+
+        $fake = new class extends FakeAzureChatClient
+        {
+            public function chat(array $messages, array $tools): array
+            {
+                $this->calls[] = ['messages' => $messages, 'tools' => $tools];
+
+                if ($this->scriptedTurns === []) {
+                    throw new RuntimeException('azure down');
+                }
+
+                return ['choices' => [['message' => array_shift($this->scriptedTurns)]]];
+            }
+        };
+        $this->app->instance(AzureChatClient::class, $fake);
+        $fake->pushToolCall('present_offers', [
+            'offers' => [['offer_ids' => $offerIds, 'memo' => 'A tidy pick.']],
+        ]);
+
+        $response = app(ChatbotAgent::class)->send('hiccup-session', 'show me an offer', 'ours', 'en', null, true);
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    expect($response['reply'])->not->toContain('could not reach')
+        ->and($response['reply'])->toContain('put together')
+        ->and(collect($response['tool_trace'])->pluck('tool')->all())->toContain('present_offers');
+});
+
+test('agent persists only clean conversational text and never raw tool messages', function () {
+    $this->seed(AirlineDemoSeeder::class);
+
+    $fake = new FakeAzureChatClient;
+    $this->app->instance(AzureChatClient::class, $fake);
+    $fake->pushToolCall('airports_for_city', ['city' => 'Istanbul']);
+    $fake->pushToolCall('ask_follow_up', [
+        'question' => 'Which Istanbul airport?',
+        'choices' => [
+            ['label' => 'IST', 'message' => 'Istanbul Airport'],
+            ['label' => 'SAW', 'message' => 'Sabiha Gokcen'],
+        ],
+    ]);
+    $fake->pushMessage('Which Istanbul airport?');
+
+    app(ChatbotAgent::class)->send('persist-session', 'I want to fly from Istanbul', 'ours', 'en', null, true);
+
+    $stored = app(ChatbotSessionStore::class)->get('persist-session')['messages'];
+    $roles = collect($stored)->pluck('role')->all();
+
+    expect($roles)->not->toContain('tool')
+        ->and(collect($stored)->every(fn (array $message): bool => ! isset($message['tool_calls'])))->toBeTrue()
+        ->and($roles[0])->toBe('system')
+        ->and($roles)->toContain('user')
+        ->and($roles)->toContain('assistant');
+});
+
+test('agent falls back to the pending question when the model hiccups after asking', function () {
+    $fake = new class extends FakeAzureChatClient
+    {
+        public function chat(array $messages, array $tools): array
+        {
+            $this->calls[] = ['messages' => $messages, 'tools' => $tools];
+
+            if ($this->scriptedTurns === []) {
+                throw new RuntimeException('azure down');
+            }
+
+            return ['choices' => [['message' => array_shift($this->scriptedTurns)]]];
+        }
+    };
+    $this->app->instance(AzureChatClient::class, $fake);
+    $fake->pushToolCall('ask_follow_up', [
+        'question' => 'One-way or round-trip?',
+        'choices' => [
+            ['label' => 'One-way', 'message' => 'One-way'],
+            ['label' => 'Round-trip', 'message' => 'Round-trip'],
+        ],
+    ]);
+
+    $response = app(ChatbotAgent::class)->send('ask-hiccup-session', 'I want to fly to London', 'ours', 'en', null, true);
+
+    expect($response['reply'])->toBe('One-way or round-trip?')
+        ->and($response['reply'])->not->toContain('could not reach')
+        ->and(collect($response['tool_trace'])->pluck('tool')->all())->toContain('ask_follow_up');
+});
+
+test('a failing tool becomes a recoverable result instead of crashing the turn', function () {
+    $fake = new FakeAzureChatClient;
+    $this->app->instance(AzureChatClient::class, $fake);
+    $fake->pushToolCall('build_dynamic_bundles', [
+        'origin' => 'IST',
+        'destination' => 'LHR',
+        'date' => '2026-08-01',
+        'service_specs' => [
+            ['service_code' => 'CHECKED_BAG', 'quantity' => 9],
+        ],
+    ]);
+    $fake->pushMessage('Let me adjust that for you.');
+
+    $response = app(ChatbotAgent::class)->send('tool-fail-session', 'nine checked bags please', 'ours', 'en', null, true);
+
+    expect($response['reply'])->toBe('Let me adjust that for you.');
 });
 
 test('agent presents at most two offers', function () {

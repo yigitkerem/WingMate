@@ -117,6 +117,7 @@ class ChatbotToolbox
                 ])
                 ->values()
                 ->all(),
+            'note' => 'These are the ONLY airports in the system for this city. Never offer or mention any airport that is not in this list. If the list is empty, we do not serve this city.',
         ];
     }
 
@@ -392,7 +393,8 @@ class ChatbotToolbox
         return [
             'offer_ids' => $offerIds,
             'memo' => $memo,
-            'title' => $fare['product'] ?? $fare['class'] ?? 'Offer',
+            'title' => $fare['class'] ?? $fare['product'] ?? 'Offer',
+            'cabin' => $fare['product'] ?? null,
             'class' => $fare['class'] ?? null,
             'package_code' => $fare['package_code'] ?? null,
             'is_custom' => $isCustom,
@@ -434,6 +436,7 @@ class ChatbotToolbox
             'hour' => $flight->departure_at->format('H:i'),
             'arrival_hour' => $flight->arrival_at->format('H:i'),
             'duration_str' => $this->durationLabel((int) $flight->duration_minutes),
+            'total_price_usd' => round((float) $offer->total_price, 2),
         ];
     }
 

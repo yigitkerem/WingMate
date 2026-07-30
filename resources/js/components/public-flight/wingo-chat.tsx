@@ -1,6 +1,7 @@
 import { router, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
+    Check,
     ChevronDown,
     Clock,
     Maximize2,
@@ -65,6 +66,13 @@ type FlightSegment = {
     hour?: string;
     arrivalHour?: string;
     duration?: string;
+    legTotal?: number;
+};
+
+type OfferHighlight = {
+    key: string;
+    label: string;
+    custom: boolean;
 };
 
 type PassengerCounts = {
@@ -83,8 +91,11 @@ type OfferCard = {
     offerIds: number[];
     memo: string;
     title: string;
+    cabin?: string;
     price: string;
     totalPrice: number;
+    seatPassengers: number;
+    perPersonPrice: number;
     isCustom: boolean;
     isRoundTrip: boolean;
     passengers: PassengerCounts;
@@ -320,6 +331,7 @@ function segmentFromRecord(segment: Record<string, unknown>): FlightSegment {
             textValue(segment.arrival_hour) ?? textValue(segment.arrival_time),
         duration:
             textValue(segment.duration_str) ?? textValue(segment.duration),
+        legTotal: numberValue(segment.total_price_usd),
     };
 }
 
@@ -358,19 +370,27 @@ function offersFromTrace(toolTrace?: ToolTrace[]): OfferCard[] {
             const segments = asRecords(offer.segments).map(segmentFromRecord);
             const totalPrice = numberValue(offer.total_price_usd) ?? 0;
             const offerIds = numberList(offer.offer_ids);
+            const passengers = passengerCountsFromRecord(
+                isRecord(offer.passengers) ? offer.passengers : {},
+            );
+            const seatPassengers = Math.max(
+                1,
+                passengers.adults + passengers.children,
+            );
 
             return {
                 key: `offer-${offerIds.join('-') || index}`,
                 offerIds,
                 memo: textValue(offer.memo) ?? '',
                 title: textValue(offer.title) ?? 'Offer',
+                cabin: textValue(offer.cabin),
                 price: formatMoney(totalPrice) ?? '$0',
                 totalPrice,
+                seatPassengers,
+                perPersonPrice: totalPrice / seatPassengers,
                 isCustom: booleanValue(offer.is_custom) === true,
                 isRoundTrip: booleanValue(offer.is_round_trip) === true,
-                passengers: passengerCountsFromRecord(
-                    isRecord(offer.passengers) ? offer.passengers : {},
-                ),
+                passengers,
                 segments,
                 route: routeLabel(segments),
                 raw: offer,
@@ -429,6 +449,109 @@ function flexValue(
         : `$${fee} fee until ${hours}h`;
 }
 
+function highlightLabel(
+    code: string,
+    t: (key: TranslationKey) => string,
+): string | undefined {
+    switch (code) {
+        case 'LOUNGE':
+            return t('chat.hl.lounge');
+        case 'FAST_TRACK':
+            return t('chat.hl.fastTrack');
+        case 'PRIORITY_BOARDING':
+            return t('chat.hl.priorityBoarding');
+        case 'PRIORITY_CHECKIN':
+            return t('chat.hl.priorityCheckin');
+        case 'MEAL':
+            return t('chat.hl.meal');
+        case 'WIFI':
+        case 'WIFI_1GB':
+        case 'WIFI_5GB':
+        case 'WIFI_UNLIMITED':
+            return t('chat.hl.wifi');
+        case 'SEAT_EXIT_ROW':
+            return t('chat.hl.exitRow');
+        default:
+            return undefined;
+    }
+}
+
+function offerHighlights(
+    raw: Record<string, unknown>,
+    t: (key: TranslationKey) => string,
+): OfferHighlight[] {
+    const services = asRecords(raw.services);
+    const collected: (OfferHighlight & { priority: number })[] = [];
+    const seenLabels = new Set<string>();
+
+    const add = (
+        key: string,
+        label: string | undefined,
+        custom: boolean,
+        priority: number,
+    ) => {
+        if (!label || seenLabels.has(label)) {
+            return;
+        }
+
+        seenLabels.add(label);
+        collected.push({ key, label, custom, priority });
+    };
+
+    const checkedBag =
+        numberValue(raw.checked_baggage_kg) ??
+        serviceAmount(services, 'CHECKED_BAG');
+
+    if (checkedBag > 0) {
+        const service = serviceByCode(services, 'CHECKED_BAG');
+        add(
+            'CHECKED_BAG',
+            t('chat.hl.checkedBag').replace(':kg', String(checkedBag)),
+            textValue(service?.source) === 'customer',
+            5,
+        );
+    }
+
+    const codeOrder = [
+        'LOUNGE',
+        'FAST_TRACK',
+        'PRIORITY_BOARDING',
+        'PRIORITY_CHECKIN',
+        'MEAL',
+        'WIFI_UNLIMITED',
+        'WIFI_5GB',
+        'WIFI_1GB',
+        'WIFI',
+        'SEAT_EXIT_ROW',
+    ];
+
+    codeOrder.forEach((code, index) => {
+        const service = serviceByCode(services, code);
+
+        if (!service || !serviceIsEnabled(service)) {
+            return;
+        }
+
+        add(
+            code,
+            highlightLabel(code, t),
+            textValue(service.source) === 'customer',
+            10 + index,
+        );
+    });
+
+    return collected
+        .sort((a, b) =>
+            a.custom === b.custom
+                ? a.priority - b.priority
+                : a.custom
+                  ? -1
+                  : 1,
+        )
+        .slice(0, 3)
+        .map(({ key, label, custom }) => ({ key, label, custom }));
+}
+
 function featureRowsFromCard(
     raw: Record<string, unknown>,
     t: (key: TranslationKey) => string,
@@ -453,7 +576,7 @@ function featureRowsFromCard(
             ? t('chat.val.included')
             : t('chat.val.notIncluded');
 
-    return [
+    const rows: FeatureRow[] = [
         {
             label: t('chat.feat.checkedBag'),
             value:
@@ -490,28 +613,58 @@ function featureRowsFromCard(
             ),
         },
     ];
+
+    const extraServices: { codes: string[]; label: TranslationKey }[] = [
+        { codes: ['LOUNGE'], label: 'chat.hl.lounge' },
+        { codes: ['FAST_TRACK'], label: 'chat.hl.fastTrack' },
+        { codes: ['PRIORITY_BOARDING'], label: 'chat.hl.priorityBoarding' },
+        { codes: ['PRIORITY_CHECKIN'], label: 'chat.hl.priorityCheckin' },
+        { codes: ['MEAL'], label: 'chat.hl.meal' },
+        {
+            codes: ['WIFI_UNLIMITED', 'WIFI_5GB', 'WIFI_1GB', 'WIFI'],
+            label: 'chat.hl.wifi',
+        },
+    ];
+
+    for (const extra of extraServices) {
+        const service = extra.codes
+            .map((code) => serviceByCode(services, code))
+            .find((candidate) => candidate && serviceIsEnabled(candidate));
+
+        if (service) {
+            rows.push({
+                label: t(extra.label),
+                value: t('chat.val.included'),
+            });
+        }
+    }
+
+    return rows;
 }
 
 function customerFirstName(customer?: CustomerSummary): string | undefined {
     return customer?.firstName.trim() || undefined;
 }
 
-function offerTitle(
-    card: OfferCard,
-    customer: CustomerSummary | undefined,
-    locale: Locale,
+function passengerSummary(
+    passengers: PassengerCounts,
+    t: (key: TranslationKey) => string,
 ): string {
-    if (!card.isCustom) {
-        return card.title;
+    const parts: string[] = [];
+
+    if (passengers.adults > 0) {
+        parts.push(`${passengers.adults} ${t('chat.pax.adult')}`);
     }
 
-    const firstName = customerFirstName(customer);
-
-    if (locale === 'tr') {
-        return firstName ? `${firstName} için hazırlandı` : 'Sana özel';
+    if (passengers.children > 0) {
+        parts.push(`${passengers.children} ${t('chat.pax.child')}`);
     }
 
-    return firstName ? `Built for ${firstName}` : 'Built for you';
+    if (passengers.babies > 0) {
+        parts.push(`${passengers.babies} ${t('chat.pax.baby')}`);
+    }
+
+    return parts.join(' · ');
 }
 
 export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
@@ -977,15 +1130,35 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
         recognition.start();
     }
 
+    function submitInput() {
+        if (isSending) {
+            return;
+        }
+
+        const text = input.trim();
+
+        if (!text) {
+            return;
+        }
+
+        setInput('');
+
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+        }
+
+        void sendMessage(text);
+    }
+
     function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        void sendMessage(input);
+        submitInput();
     }
 
     function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
-            void sendMessage(input);
+            submitInput();
         }
     }
 
@@ -1099,7 +1272,6 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
                             {message.role === 'assistant' && (
                                 <OfferCards
                                     toolTrace={message.toolTrace}
-                                    customer={customer}
                                     onCheckout={setCheckoutTarget}
                                 />
                             )}
@@ -1146,7 +1318,7 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
                             <textarea
                                 ref={textareaRef}
                                 rows={1}
-                                className="max-h-40 flex-1 resize-none rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-5 transition-colors outline-none focus:border-red-800 focus:bg-white"
+                                className="max-h-40 min-h-12 flex-1 resize-none rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-5 transition-colors outline-none focus:border-red-800 focus:bg-white"
                                 placeholder={t('chat.typeMessage')}
                                 value={input}
                                 onChange={(event) => setInput(event.target.value)}
@@ -1192,7 +1364,6 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
             {checkoutTarget && (
                 <WingoCheckoutModal
                     target={checkoutTarget}
-                    customer={customer}
                     onClose={() => setCheckoutTarget(null)}
                 />
             )}
@@ -1374,11 +1545,9 @@ function RichMessage({
 
 function OfferCards({
     toolTrace,
-    customer,
     onCheckout,
 }: {
     toolTrace?: ToolTrace[];
-    customer?: CustomerSummary;
     onCheckout: (card: OfferCard) => void;
 }) {
     const { locale, t } = useTranslation();
@@ -1406,14 +1575,44 @@ function OfferCards({
                             <div className="grid gap-3 p-4">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="truncate font-display text-base font-black text-slate-950">
-                                            {offerTitle(card, customer, locale)}
+                                        <div className="flex items-center gap-2">
+                                            <span className="truncate font-display text-base font-black text-slate-950">
+                                                {card.title}
+                                            </span>
+                                            <span
+                                                className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-black tracking-wide uppercase ${
+                                                    card.isCustom
+                                                        ? 'bg-red-50 text-red-800'
+                                                        : 'bg-slate-100 text-slate-500'
+                                                }`}
+                                            >
+                                                {card.isCustom
+                                                    ? t('chat.tailored')
+                                                    : t('chat.standardPackage')}
+                                            </span>
                                         </div>
-                                        {card.route && (
-                                            <div className="mt-0.5 text-[11px] font-semibold text-slate-500">
-                                                {card.route}
-                                            </div>
-                                        )}
+                                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] font-semibold text-slate-500">
+                                            {card.cabin && (
+                                                <span className="text-slate-700">
+                                                    {card.cabin}
+                                                </span>
+                                            )}
+                                            {card.cabin && card.route && (
+                                                <span aria-hidden="true">
+                                                    ·
+                                                </span>
+                                            )}
+                                            {card.route && (
+                                                <span>{card.route}</span>
+                                            )}
+                                            <span aria-hidden="true">·</span>
+                                            <span>
+                                                {passengerSummary(
+                                                    card.passengers,
+                                                    t,
+                                                )}
+                                            </span>
+                                        </div>
                                     </div>
                                     <div className="shrink-0 text-right">
                                         <div className="font-display text-lg font-black text-red-800">
@@ -1422,8 +1621,20 @@ function OfferCards({
                                         <div className="text-[10px] font-bold text-slate-400">
                                             {t('chat.total').toLowerCase()}
                                         </div>
+                                        {card.seatPassengers > 1 && (
+                                            <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                                                {formatMoney(
+                                                    card.perPersonPrice,
+                                                )}{' '}
+                                                {t('chat.perPerson')}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
+
+                                <OfferHighlights
+                                    highlights={offerHighlights(card.raw, t)}
+                                />
 
                                 <div className="grid gap-2">
                                     {card.segments.map((segment, index) => (
@@ -1501,7 +1712,6 @@ function OfferCards({
             {isComparing && (
                 <OfferComparisonModal
                     cards={cards}
-                    customer={customer}
                     onClose={() => setIsComparing(false)}
                     onSelect={(card) => {
                         setIsComparing(false);
@@ -1509,6 +1719,30 @@ function OfferCards({
                     }}
                 />
             )}
+        </div>
+    );
+}
+
+function OfferHighlights({ highlights }: { highlights: OfferHighlight[] }) {
+    if (highlights.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="flex flex-wrap gap-1.5">
+            {highlights.map((highlight) => (
+                <span
+                    key={highlight.key}
+                    className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold ${
+                        highlight.custom
+                            ? 'bg-red-50 text-red-800'
+                            : 'bg-slate-100 text-slate-600'
+                    }`}
+                >
+                    <Check className="size-3" />
+                    {highlight.label}
+                </span>
+            ))}
         </div>
     );
 }
@@ -1624,12 +1858,10 @@ function FeatureTable({ rows }: { rows: FeatureRow[] }) {
 
 function OfferComparisonModal({
     cards,
-    customer,
     onClose,
     onSelect,
 }: {
     cards: OfferCard[];
-    customer?: CustomerSummary;
     onClose: () => void;
     onSelect: (card: OfferCard) => void;
 }) {
@@ -1690,9 +1922,25 @@ function OfferComparisonModal({
                                         className="border-l border-slate-200 px-3 py-3 align-top"
                                     >
                                         <span className="block font-display text-base font-black text-slate-950">
-                                            {offerTitle(card, customer, locale)}
+                                            {card.title}
                                         </span>
-                                        <span className="mt-1 block text-lg font-black text-red-800">
+                                        {card.cabin && (
+                                            <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">
+                                                {card.cabin}
+                                            </span>
+                                        )}
+                                        <span
+                                            className={`mt-1 inline-block rounded-md px-2 py-0.5 text-[10px] font-black tracking-wide uppercase ${
+                                                card.isCustom
+                                                    ? 'bg-red-50 text-red-800'
+                                                    : 'bg-slate-100 text-slate-500'
+                                            }`}
+                                        >
+                                            {card.isCustom
+                                                ? t('chat.tailored')
+                                                : t('chat.standardPackage')}
+                                        </span>
+                                        <span className="mt-1.5 block text-lg font-black text-red-800">
                                             {card.price}
                                         </span>
                                     </th>
@@ -1763,11 +2011,9 @@ function OfferComparisonModal({
 
 function WingoCheckoutModal({
     target,
-    customer,
     onClose,
 }: {
     target: OfferCard;
-    customer?: CustomerSummary;
     onClose: () => void;
 }) {
     const { locale, t } = useTranslation();
@@ -1812,8 +2058,7 @@ function WingoCheckoutModal({
                             {t('chat.checkout')}
                         </div>
                         <h2 className="mt-1 font-display text-xl font-black">
-                            {offerTitle(target, customer, locale)} ·{' '}
-                            {target.price}
+                            {target.title} · {target.price}
                         </h2>
                     </div>
                     <button
@@ -1839,6 +2084,8 @@ function WingoCheckoutModal({
                     <FeatureTable
                         rows={featureRowsFromCard(target.raw, t, locale)}
                     />
+
+                    <CheckoutPriceBreakdown target={target} />
 
                     <div className="grid animate-in gap-3 fade-in-50 slide-in-from-bottom-1 sm:grid-cols-2">
                         <CheckoutField
@@ -1894,6 +2141,65 @@ function WingoCheckoutModal({
                     </button>
                 </div>
             </form>
+        </div>
+    );
+}
+
+function CheckoutPriceBreakdown({ target }: { target: OfferCard }) {
+    const { locale, t } = useTranslation();
+    const seatPassengers = target.seatPassengers;
+    const perPax = seatPassengers > 1;
+    const legs = target.segments.filter(
+        (segment) => segment.legTotal !== undefined,
+    );
+
+    return (
+        <div className="overflow-hidden rounded-md border border-slate-200">
+            <div className="border-b border-slate-100 bg-slate-50 px-3 py-2 font-condensed text-[10px] font-black tracking-wide text-slate-500 uppercase">
+                {t('chat.priceBreakdown')}
+            </div>
+            {legs.map((segment, index) => {
+                const legTotal = segment.legTotal ?? 0;
+
+                return (
+                    <div
+                        key={`breakdown-${index}`}
+                        className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm"
+                    >
+                        <div className="min-w-0">
+                            <div className="font-bold text-slate-900">
+                                {[segment.origin, segment.destination]
+                                    .filter(Boolean)
+                                    .join(' → ')}
+                            </div>
+                            <div className="text-[11px] font-semibold text-slate-500">
+                                {formatFlightDate(segment.date, locale)}
+                                {perPax &&
+                                    ` · ${formatMoney(legTotal / seatPassengers)} × ${seatPassengers}`}
+                            </div>
+                        </div>
+                        <div className="shrink-0 font-black text-slate-900">
+                            {formatMoney(legTotal)}
+                        </div>
+                    </div>
+                );
+            })}
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-3 py-2.5">
+                <span className="font-condensed text-[11px] font-black tracking-wide text-slate-600 uppercase">
+                    {t('chat.total')}
+                </span>
+                <span className="text-right">
+                    <span className="block font-display text-base font-black text-red-800">
+                        {target.price}
+                    </span>
+                    {perPax && (
+                        <span className="block text-[11px] font-semibold text-slate-500">
+                            {formatMoney(target.perPersonPrice)}{' '}
+                            {t('chat.perPerson')}
+                        </span>
+                    )}
+                </span>
+            </div>
         </div>
     );
 }
