@@ -263,7 +263,6 @@ class ChatbotToolbox
                 return ((float) ($firstFare['base_price_usd'] ?? PHP_FLOAT_MAX))
                     <=> ((float) ($secondFare['base_price_usd'] ?? PHP_FLOAT_MAX));
             })
-            ->take(2)
             ->map(fn (array $fare): array => [
                 ...$fare,
                 'offer_ids' => [(int) $fare['id']],
@@ -352,7 +351,7 @@ class ChatbotToolbox
             ],
             'passengers' => $search['passengers'],
             'seat_passengers' => $search['seat_passengers'],
-            'recommended_picks' => $picks->take(2)->values()->all(),
+            'recommended_picks' => $picks->values()->all(),
         ];
     }
 

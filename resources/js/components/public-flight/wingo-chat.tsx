@@ -58,6 +58,7 @@ type FlightCard = {
     classLetters?: string;
     isPrivate?: boolean;
     isCustom?: boolean;
+    highlightPills: string[];
 };
 
 type FlightSegment = {
@@ -207,6 +208,15 @@ function numberList(value: unknown): number[] {
         ? value.filter(
               (item): item is number =>
                   typeof item === 'number' && Number.isInteger(item),
+          )
+        : [];
+}
+
+function stringList(value: unknown): string[] {
+    return Array.isArray(value)
+        ? value.filter(
+              (item): item is string =>
+                  typeof item === 'string' && item.trim() !== '',
           )
         : [];
 }
@@ -397,14 +407,13 @@ function featureRowsFromFare(fare: Record<string, unknown>): FeatureRow[] {
         },
         {
             label: 'Seat selection',
-            value:
-                serviceIsEnabled(serviceByCode(services, 'SEAT_EXIT_ROW'))
-                    ? 'Exit row'
-                    : serviceIsEnabled(serviceByCode(services, 'SEAT_STANDARD'))
-                      ? 'Standard'
-                      : seatSelection
-                        ? 'Included'
-                        : 'Not included',
+            value: serviceIsEnabled(serviceByCode(services, 'SEAT_EXIT_ROW'))
+                ? 'Exit row'
+                : serviceIsEnabled(serviceByCode(services, 'SEAT_STANDARD'))
+                  ? 'Standard'
+                  : seatSelection
+                    ? 'Included'
+                    : 'Not included',
             source: serviceSource(services, 'SEAT_SELECTION'),
         },
         {
@@ -414,8 +423,8 @@ function featureRowsFromFare(fare: Record<string, unknown>): FeatureRow[] {
                     ? changeFeePercent !== undefined
                         ? `${changeFeePercent}% fee until ${changeHours}h`
                         : changeFee === 0
-                        ? `No fee until ${changeHours}h`
-                        : `$${changeFee ?? 0} fee until ${changeHours}h`
+                          ? `No fee until ${changeHours}h`
+                          : `$${changeFee ?? 0} fee until ${changeHours}h`
                     : 'Not included',
             source: serviceSource(services, 'CHANGE_ALLOWED'),
         },
@@ -426,8 +435,8 @@ function featureRowsFromFare(fare: Record<string, unknown>): FeatureRow[] {
                     ? refundFeePercent !== undefined
                         ? `${refundFeePercent}% fee until ${refundHours}h`
                         : refundFee === 0
-                        ? `No fee until ${refundHours}h`
-                        : `$${refundFee ?? 0} fee until ${refundHours}h`
+                          ? `No fee until ${refundHours}h`
+                          : `$${refundFee ?? 0} fee until ${refundHours}h`
                     : 'Not included',
             source: serviceSource(services, 'REFUNDABLE'),
         },
@@ -550,7 +559,7 @@ function messageWithSearchPrefill(
         `babies ${prefill.babies ?? 0}`,
     ].join(', ');
 
-    const messageWithContext = `${message}\n\nCurrent search form: from ${prefill.origin} to ${prefill.destination} on ${prefill.date}.${returnText} Passengers: ${passengerText}. Use this as prefill context when the user asks about flights, fares, or bundles.`;
+    const messageWithContext = `${message}\n\nCurrent search form: from ${prefill.origin} to ${prefill.destination} on ${prefill.date}.${returnText} Passengers: ${passengerText}. Use this prefill only for flight search, fare recommendation, bundle building, checkout, or purchase questions. Ignore the prefill for policy, passenger rights, cancellation, compensation, refund-rule, baggage-rule, or other knowledge-base questions.`;
 
     return messageWithContext.length <= 2000 ? messageWithContext : message;
 }
@@ -636,16 +645,6 @@ function routeLabel(segments: FlightSegment[]) {
     return [first.origin, first.destination].filter(Boolean).join(' to ');
 }
 
-function segmentSchedule(segment: FlightSegment) {
-    return [
-        segment.date,
-        [segment.hour, segment.arrivalHour].filter(Boolean).join('-'),
-        segment.duration,
-    ]
-        .filter(Boolean)
-        .join(' · ');
-}
-
 function fareDetails(fare: Record<string, unknown>): string[] {
     const checkedBag = numberValue(fare.checked_baggage_kg) ?? 0;
     const cabinBag = numberValue(fare.cabin_baggage_kg) ?? 0;
@@ -671,15 +670,15 @@ function fareDetails(fare: Record<string, unknown>): string[] {
             ? changeFeePercent !== undefined
                 ? `${changeFeePercent}% change fee`
                 : changeFee === 0
-                ? 'Free change'
-                : `Change allowed, $${changeFee} fee`
+                  ? 'Free change'
+                  : `Change allowed, $${changeFee} fee`
             : 'No change allowed',
         refundable
             ? refundFeePercent !== undefined
                 ? `${refundFeePercent}% refund fee`
                 : refundFee === 0
-                ? 'Free refund'
-                : `Refundable, $${refundFee} fee`
+                  ? 'Free refund'
+                  : `Refundable, $${refundFee} fee`
             : 'No refund allowed',
     ].filter((detail): detail is string => Boolean(detail));
 }
@@ -707,7 +706,7 @@ function flightCardsFromTrace(toolTrace?: ToolTrace[]): FlightCard[] {
 
             return {
                 key: `bundle-${textValue(flight.flight_number) ?? 'flight'}-${textValue(pick.uuid) ?? index}`,
-                badge: index === 0 ? 'Best pick' : 'Backup',
+                badge: index === 0 ? 'Offer' : 'Option',
                 title: textValue(pick.class) ?? 'Recommended package',
                 price: formatMoney(totalPrice) ?? '$0',
                 totalPrice,
@@ -726,12 +725,13 @@ function flightCardsFromTrace(toolTrace?: ToolTrace[]): FlightCard[] {
                 classLetters: textValue(pick.class_letters),
                 isPrivate: booleanValue(pick.public) === false,
                 isCustom: booleanValue(pick.customized) === true,
+                highlightPills: stringList(pick.highlight_pills),
             };
         });
     });
 
     if (bundleCards.length > 0) {
-        return bundleCards.slice(0, 2);
+        return bundleCards;
     }
 
     return toolTrace
@@ -792,6 +792,7 @@ function flightCardsFromTrace(toolTrace?: ToolTrace[]): FlightCard[] {
                         classLetters: textValue(fare.class_letters),
                         isPrivate: booleanValue(fare.public) === false,
                         isCustom: booleanValue(fare.customized) === true,
+                        highlightPills: stringList(fare.highlight_pills),
                     },
                 ];
             });
@@ -1001,13 +1002,6 @@ export function WingoChat({ isOpen, onOpen, onClose }: WingoChatProps) {
     useEffect(() => {
         if (typeof window === 'undefined') {
             return;
-        }
-
-        const storedPrefill = readStoredWingoSearchPrefill();
-
-        if (storedPrefill) {
-            setSearchPrefill(storedPrefill);
-            setBuilder((current) => builderFromPrefill(storedPrefill, current));
         }
 
         function handleSearchPrefill(event: Event) {
@@ -1465,7 +1459,7 @@ function FlightSuggestionCards({
                 return (
                     <div key={card.key} className="grid gap-3">
                         {index === 1 && (
-                            <p className="animate-in rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 font-semibold text-red-900 duration-300 fade-in-50 slide-in-from-bottom-1">
+                            <p className="animate-in px-1 text-xs leading-5 font-medium text-slate-600 duration-300 fade-in-50 slide-in-from-bottom-1">
                                 {bridgeSuggestion(cards[0], card)}
                             </p>
                         )}
@@ -1562,6 +1556,14 @@ function FlightDisplay({
                                 Private offer
                             </span>
                         )}
+                        {card.highlightPills.map((highlight) => (
+                            <span
+                                key={highlight}
+                                className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-800"
+                            >
+                                {highlight}
+                            </span>
+                        ))}
                     </div>
                     <div className="mt-2 truncate text-base font-black text-slate-950">
                         {cardTitle(card, customer)}
@@ -1927,15 +1929,6 @@ function CheckoutField({
                 onChange={(event) => onChange(event.target.value)}
             />
         </label>
-    );
-}
-
-function SummaryLine({ label, value }: { label: string; value: string }) {
-    return (
-        <div className="flex justify-between gap-3">
-            <span>{label}</span>
-            <span className="font-black text-slate-950">{value}</span>
-        </div>
     );
 }
 

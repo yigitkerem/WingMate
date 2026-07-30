@@ -81,12 +81,172 @@ test('agent handles structured bundle requests without the external chat service
         Carbon::setTestNow();
     }
 
-    expect($response['reply'])->toContain('Here are my top picks for you')
-        ->and($response['reply'])->toContain('Do these look good to you?')
+    expect($response['reply'])->toBe("Here's my offer for you.")
         ->and($response['reply'])->not->toContain('best custom bundle')
         ->and($response['reply'])->not->toContain('Backup pick')
         ->and($response['reply'])->not->toContain('could not reach')
         ->and($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles');
+});
+
+test('agent hides model generated bundle narration after tools run', function () {
+    createSellablePricingFixture();
+
+    config()->set('services.azure_openai.base_url', 'https://azure.test/openai/v1');
+    config()->set('services.azure_openai.api_key', 'test-key');
+    config()->set('services.azure_openai.model', 'test-model');
+
+    Http::fakeSequence()
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => null,
+                    'tool_calls' => [[
+                        'id' => 'call-bundle',
+                        'type' => 'function',
+                        'function' => [
+                            'name' => 'build_dynamic_bundles',
+                            'arguments' => json_encode([
+                                'origin' => 'IST',
+                                'destination' => 'LHR',
+                                'date' => '2026-08-10',
+                                'service_codes' => ['CHECKED_BAG'],
+                            ], JSON_THROW_ON_ERROR),
+                        ],
+                    ]],
+                ],
+            ]],
+        ])
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => '**EcoFly** is the best custom bundle: **$363** (IST-CDG, 2026-07-29 06:50 10:30).'."\n\n".'8 kg cabin bag'."\n".'Backup pick: Wingo Custom ExtraFly ($476).',
+                ],
+            ]],
+        ]);
+
+    $response = app(ChatbotAgent::class)->send(
+        'model-bundle-session',
+        'Can you recommend a flight from Istanbul to London?',
+        'ours',
+        'en',
+    );
+
+    expect($response['reply'])->toBe("Of course, I can add checked bags, here's the offer.")
+        ->and($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles');
+});
+
+test('agent keeps clean dynamic bundle replies and exposes model chosen highlights', function () {
+    createSellablePricingFixture();
+
+    config()->set('services.azure_openai.base_url', 'https://azure.test/openai/v1');
+    config()->set('services.azure_openai.api_key', 'test-key');
+    config()->set('services.azure_openai.model', 'test-model');
+
+    Http::fakeSequence()
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => null,
+                    'tool_calls' => [[
+                        'id' => 'call-bundle',
+                        'type' => 'function',
+                        'function' => [
+                            'name' => 'build_dynamic_bundles',
+                            'arguments' => json_encode([
+                                'origin' => 'IST',
+                                'destination' => 'LHR',
+                                'date' => '2026-08-10',
+                                'service_codes' => ['WIFI'],
+                            ], JSON_THROW_ON_ERROR),
+                        ],
+                    ]],
+                ],
+            ]],
+        ])
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => "Of course, I can add Wi-Fi, here's the offer.\n[[offer_highlights:0=Wi-Fi fit]]",
+                ],
+            ]],
+        ]);
+
+    $response = app(ChatbotAgent::class)->send(
+        'model-bundle-highlight-session',
+        'Can you add wifi to my London offer?',
+        'ours',
+        'en',
+    );
+
+    expect($response['reply'])->toBe("Of course, I can add Wi-Fi, here's the offer.")
+        ->and($response['reply'])->not->toContain('offer_highlights')
+        ->and($response['tool_trace'][0]['result']['recommended_picks'][0]['highlight_pills'])->toBe(['Wi-Fi fit']);
+});
+
+test('agent suppresses offer cards when a knowledge base question also triggers bundle tools', function () {
+    createSellablePricingFixture();
+
+    config()->set('services.azure_openai.base_url', 'https://azure.test/openai/v1');
+    config()->set('services.azure_openai.api_key', 'test-key');
+    config()->set('services.azure_openai.model', 'test-model');
+
+    Http::fakeSequence()
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => null,
+                    'tool_calls' => [
+                        [
+                            'id' => 'call-knowledge',
+                            'type' => 'function',
+                            'function' => [
+                                'name' => 'search_knowledge_base',
+                                'arguments' => json_encode([
+                                    'query' => 'flight cancellation passenger rights',
+                                    'k' => 3,
+                                ], JSON_THROW_ON_ERROR),
+                            ],
+                        ],
+                        [
+                            'id' => 'call-bundle',
+                            'type' => 'function',
+                            'function' => [
+                                'name' => 'build_dynamic_bundles',
+                                'arguments' => json_encode([
+                                    'origin' => 'IST',
+                                    'destination' => 'LHR',
+                                    'date' => '2026-08-10',
+                                ], JSON_THROW_ON_ERROR),
+                            ],
+                        ],
+                    ],
+                ],
+            ]],
+        ])
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => '**EcoFly** is the best custom bundle: **$363** (IST-CDG, 2026-07-29 06:50 10:30).'."\n\n".'8 kg cabin bag'."\n".'Backup pick: Wingo Custom ExtraFly ($476).',
+                ],
+            ]],
+        ]);
+
+    $response = app(ChatbotAgent::class)->send(
+        'knowledge-no-offer-cards-session',
+        'What are my passenger rights if my flight is cancelled?',
+        'ours',
+        'en',
+    );
+
+    expect($response['reply'])->not->toContain('best custom bundle')
+        ->and($response['reply'])->not->toContain('Backup pick')
+        ->and(collect($response['tool_trace'])->pluck('tool')->all())->toBe(['search_knowledge_base']);
 });
 
 test('agent handles structured round trip bundle requests', function () {
@@ -145,6 +305,25 @@ test('bundle recommendations can use non public package inventory', function () 
     ], null, false)['result'];
 
     expect($bundle['recommended_picks'][0]['public'])->toBeFalse();
+});
+
+test('bundle recommendations return all custom offer cards', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        $bundle = app(ChatbotToolbox::class)->dispatch('build_dynamic_bundles', [
+            'origin' => 'IST',
+            'destination' => 'LHR',
+            'date' => '2026-07-29',
+            'service_codes' => ['WIFI'],
+        ], null, false)['result'];
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    expect($bundle['recommended_picks'])->toHaveCount(5)
+        ->and(collect($bundle['recommended_picks'])->pluck('package_code')->unique()->values()->all())->toHaveCount(5);
 });
 
 test('bundle recommendations create custom add on offers for unmet demand', function () {

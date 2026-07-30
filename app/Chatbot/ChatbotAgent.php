@@ -2,7 +2,6 @@
 
 namespace App\Chatbot;
 
-use App\Support\ServiceValue;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -90,6 +89,10 @@ class ChatbotAgent
                 'result' => $result,
             ]];
             $reply = $this->bundleReply($result, $directBundleRequest, $language);
+            $toolTrace = $this->withOfferHighlights(
+                $toolTrace,
+                $this->defaultOfferHighlights($result, $directBundleRequest),
+            );
 
             $messages[] = ['role' => 'assistant', 'content' => $reply];
             $this->sessionStore->put($sessionId, $messages, $pendingPurchase);
@@ -120,10 +123,28 @@ class ChatbotAgent
             $messages[] = $assistantMessage;
 
             if ($toolCalls === []) {
+                $reply = (string) ($message['content'] ?? '');
+
+                if ($this->hasKnowledgeTrace($toolTrace)) {
+                    if ($this->isOfferNarration($reply)) {
+                        $reply = $this->knowledgeReplyFromTrace($toolTrace, $language) ?? $reply;
+                    }
+                } elseif ($this->hasBundleTrace($toolTrace)) {
+                    $presentation = $this->extractOfferPresentation($reply);
+                    $reply = $presentation['reply'];
+
+                    if (! $this->isCleanBundleReply($reply)) {
+                        $reply = $this->bundleReplyFromTrace($toolTrace, $language) ?? $this->genericBundleReply($language);
+                    }
+
+                    $toolTrace = $this->withOfferHighlights($toolTrace, $presentation['offer_highlights']);
+                }
+
+                $messages[count($messages) - 1]['content'] = $reply;
                 $this->sessionStore->put($sessionId, $messages, $pendingPurchase);
 
                 return [
-                    'reply' => (string) ($message['content'] ?? ''),
+                    'reply' => $reply,
                     'tool_trace' => $this->publicToolTrace($toolTrace),
                 ];
             }
@@ -417,72 +438,337 @@ class ChatbotAgent
         }
 
         $reply = $language === 'tr'
-            ? 'Sana en uygun seçenekleri hazırladım.'
-            : 'Here are my top picks for you.';
+            ? $this->turkishBundleReply($request)
+            : $this->englishBundleReply($request);
 
-        return $reply."\n\n".$this->bundleFollowUp($pick, $language);
+        return $reply;
     }
 
     /**
-     * @param  array<string, mixed>  $pick
+     * @param  array<int, array<string, mixed>>  $toolTrace
      */
-    private function bundleFollowUp(array $pick, string $language): string
+    private function hasBundleTrace(array $toolTrace): bool
     {
-        $suggestions = collect([
-            ((int) ($pick['checked_baggage_kg'] ?? 0)) <= 0 ? 'checked bags' : null,
-            ($pick['latest_change_hours'] ?? null) === null ? 'change flexibility' : null,
-            ($pick['latest_refund_hours'] ?? null) === null ? 'refund flexibility' : null,
-            ! $this->pickIncludesService($pick, 'WIFI') ? 'Wi-Fi' : null,
-            ! $this->pickIncludesService($pick, 'LOUNGE') ? 'lounge access' : null,
-            ! $this->pickIncludesService($pick, 'FAST_TRACK') ? 'fast track' : null,
-        ])
-            ->filter()
-            ->take(3)
-            ->values()
-            ->all();
+        return collect($toolTrace)
+            ->contains(fn (array $trace): bool => ($trace['tool'] ?? null) === 'build_dynamic_bundles');
+    }
 
-        if ($suggestions === []) {
-            return $language === 'tr'
-                ? 'Bunlar uygun görünüyor mu? İstersen daha fazla konfor veya esneklik ekleyebiliriz.'
-                : 'Do these look good to you? We can still tune the comfort or flexibility.';
+    /**
+     * @param  array<int, array<string, mixed>>  $toolTrace
+     */
+    private function hasKnowledgeTrace(array $toolTrace): bool
+    {
+        return collect($toolTrace)
+            ->contains(fn (array $trace): bool => ($trace['tool'] ?? null) === 'search_knowledge_base');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $toolTrace
+     */
+    private function bundleReplyFromTrace(array $toolTrace, string $language): ?string
+    {
+        $bundleTrace = collect($toolTrace)
+            ->reverse()
+            ->first(fn (array $trace): bool => ($trace['tool'] ?? null) === 'build_dynamic_bundles');
+
+        if (! is_array($bundleTrace)) {
+            return null;
         }
 
-        $joined = $this->joinSuggestions($suggestions);
+        $result = is_array($bundleTrace['result'] ?? null) ? $bundleTrace['result'] : [];
+        $input = is_array($bundleTrace['input'] ?? null) ? $bundleTrace['input'] : [];
 
-        return $language === 'tr'
-            ? "Bunlar uygun görünüyor mu? İstersen {$joined} ekleyebiliriz."
-            : "Do these look good to you? We can add {$joined} if that would fit the trip better.";
+        return $this->bundleReply($result, $input, $language);
     }
 
     /**
-     * @param  array<string, mixed>  $pick
+     * @param  array<string, mixed>  $request
      */
-    private function pickIncludesService(array $pick, string $code): bool
+    private function englishBundleReply(array $request): string
     {
-        $services = collect(is_array($pick['services'] ?? null) ? $pick['services'] : []);
-        $service = $services->firstWhere('code', $code);
+        $additions = $this->requestedServiceLabels($request);
+        $exclusions = $this->excludedServiceLabels($request);
 
-        if (! is_array($service)) {
+        if ($additions !== [] && $exclusions !== []) {
+            return "Of course, I can add {$this->joinLabels($additions)} and keep it without {$this->joinLabels($exclusions)}, here's the offer.";
+        }
+
+        if ($additions !== []) {
+            return "Of course, I can add {$this->joinLabels($additions)}, here's the offer.";
+        }
+
+        if ($exclusions !== []) {
+            return "Of course, I can build this without {$this->joinLabels($exclusions)}, here's the offer.";
+        }
+
+        return "Here's my offer for you.";
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function turkishBundleReply(array $request): string
+    {
+        $additions = $this->requestedServiceLabels($request);
+        $exclusions = $this->excludedServiceLabels($request);
+
+        if ($additions !== [] && $exclusions !== []) {
+            return "{$this->joinLabels($additions)} ekleyip {$this->joinLabels($exclusions)} olmadan hazırlayabilirim; teklifin burada.";
+        }
+
+        if ($additions !== []) {
+            return "{$this->joinLabels($additions)} ekleyebilirim; teklifin burada.";
+        }
+
+        if ($exclusions !== []) {
+            return "{$this->joinLabels($exclusions)} olmadan hazırlayabilirim; teklifin burada.";
+        }
+
+        return 'Teklifini hazırladım.';
+    }
+
+    private function genericBundleReply(string $language): string
+    {
+        return $language === 'tr' ? 'Teklifini hazırladım.' : "Here's my offer for you.";
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     * @return array<int, string>
+     */
+    private function requestedServiceLabels(array $request): array
+    {
+        $serviceCodes = collect(is_array($request['service_codes'] ?? null) ? $request['service_codes'] : []);
+        $serviceSpecs = collect(is_array($request['service_specs'] ?? null) ? $request['service_specs'] : [])
+            ->pluck('service_code');
+
+        return $serviceCodes
+            ->merge($serviceSpecs)
+            ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
+            ->map(fn (string $serviceCode): string => $this->serviceLabel($serviceCode))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     * @return array<int, string>
+     */
+    private function excludedServiceLabels(array $request): array
+    {
+        return collect(is_array($request['excluded_service_codes'] ?? null) ? $request['excluded_service_codes'] : [])
+            ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
+            ->map(fn (string $serviceCode): string => $this->serviceLabel($serviceCode))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function serviceLabel(string $serviceCode): string
+    {
+        return match ($serviceCode) {
+            'CHECKED_BAG' => 'checked bags',
+            'CABIN_BAG' => 'cabin bags',
+            'SEAT_SELECTION' => 'seat selection',
+            'SEAT_STANDARD' => 'a standard seat',
+            'SEAT_EXIT_ROW' => 'an exit row seat',
+            'CHANGE_ALLOWED' => 'change flexibility',
+            'REFUNDABLE' => 'refund flexibility',
+            'LOUNGE' => 'lounge access',
+            'FAST_TRACK' => 'fast track',
+            'PRIORITY_BOARDING' => 'priority boarding',
+            'PRIORITY_CHECKIN' => 'priority check-in',
+            'WIFI', 'WIFI_1GB', 'WIFI_5GB', 'WIFI_UNLIMITED' => 'Wi-Fi',
+            'MEAL' => 'a special meal',
+            default => Str::of($serviceCode)->replace('_', ' ')->lower()->toString(),
+        };
+    }
+
+    /**
+     * @param  array<int, string>  $labels
+     */
+    private function joinLabels(array $labels): string
+    {
+        if (count($labels) <= 1) {
+            return $labels[0] ?? '';
+        }
+
+        $last = array_pop($labels);
+
+        return implode(', ', $labels).' and '.$last;
+    }
+
+    /**
+     * @return array{reply: string, offer_highlights: array<int, array{index: int, label: string}>}
+     */
+    private function extractOfferPresentation(string $reply): array
+    {
+        $offerHighlights = [];
+        $cleanReply = preg_replace_callback('/\[\[offer_highlights:(.*?)\]\]/is', function (array $matches) use (&$offerHighlights): string {
+            $offerHighlights = $this->parseOfferHighlights((string) $matches[1]);
+
+            return '';
+        }, $reply) ?? $reply;
+
+        return [
+            'reply' => trim((string) preg_replace("/\n{3,}/", "\n\n", $cleanReply)),
+            'offer_highlights' => $offerHighlights,
+        ];
+    }
+
+    /**
+     * @return array<int, array{index: int, label: string}>
+     */
+    private function parseOfferHighlights(string $value): array
+    {
+        return collect(explode(';', $value))
+            ->map(function (string $entry): ?array {
+                if (preg_match('/^\s*(\d+)\s*=\s*(.+?)\s*$/', $entry, $matches) !== 1) {
+                    return null;
+                }
+
+                $label = Str::of($matches[2])
+                    ->replaceMatches('/[\[\]\r\n]+/', ' ')
+                    ->squish()
+                    ->limit(28, '')
+                    ->toString();
+
+                if ($label === '') {
+                    return null;
+                }
+
+                return [
+                    'index' => (int) $matches[1],
+                    'label' => $label,
+                ];
+            })
+            ->filter()
+            ->take(2)
+            ->values()
+            ->all();
+    }
+
+    private function isCleanBundleReply(string $reply): bool
+    {
+        if (trim($reply) === '' || Str::length($reply) > 240) {
             return false;
         }
 
-        $value = $service['value'] ?? null;
+        if ($this->isOfferNarration($reply)) {
+            return false;
+        }
 
-        return ServiceValue::isEnabled($value);
+        return substr_count($reply, "\n") <= 2;
+    }
+
+    private function isOfferNarration(string $reply): bool
+    {
+        $normalized = Str::lower($reply);
+
+        if (Str::contains($normalized, ['best custom bundle', 'backup pick', 'en uygun özel paket'])) {
+            return true;
+        }
+
+        if (preg_match('/\([A-Z]{3}\s*-\s*[A-Z]{3},\s*\d{4}-\d{2}-\d{2}/', $reply) === 1) {
+            return true;
+        }
+
+        return preg_match('/\$\d|\b\d+\s*kg\s+(?:cabin|checked)\s+bag/i', $reply) === 1;
     }
 
     /**
-     * @param  array<int, string>  $suggestions
+     * @param  array<int, array<string, mixed>>  $toolTrace
      */
-    private function joinSuggestions(array $suggestions): string
+    private function knowledgeReplyFromTrace(array $toolTrace, string $language): ?string
     {
-        if (count($suggestions) <= 1) {
-            return $suggestions[0] ?? '';
+        $knowledgeTrace = collect($toolTrace)
+            ->reverse()
+            ->first(fn (array $trace): bool => ($trace['tool'] ?? null) === 'search_knowledge_base');
+
+        if (! is_array($knowledgeTrace)) {
+            return null;
         }
 
-        $last = array_pop($suggestions);
+        $result = is_array($knowledgeTrace['result'] ?? null) ? $knowledgeTrace['result'] : [];
+        $hit = collect(is_array($result['hits'] ?? null) ? $result['hits'] : [])->first();
 
-        return implode(', ', $suggestions).' or '.$last;
+        if (! is_array($hit)) {
+            return $language === 'tr'
+                ? 'Resmi kaynaklarda bu konuda net bir bilgi bulamadım.'
+                : 'I could not find a clear answer in the official sources.';
+        }
+
+        $content = Str::of((string) ($hit['content'] ?? ''))
+            ->squish()
+            ->limit(360)
+            ->toString();
+        $title = (string) ($hit['title'] ?? 'Knowledge base');
+        $page = $hit['page'] ?? null;
+        $source = $page ? "{$title}, p.{$page}" : $title;
+
+        return $language === 'tr'
+            ? "{$content} (Kaynak: {$source})"
+            : "{$content} (Source: {$source})";
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @param  array<string, mixed>  $request
+     * @return array<int, array{index: int, label: string}>
+     */
+    private function defaultOfferHighlights(array $result, array $request): array
+    {
+        $picks = collect(is_array($result['recommended_picks'] ?? null) ? $result['recommended_picks'] : []);
+
+        if ($picks->isEmpty()) {
+            return [];
+        }
+
+        $label = $this->requestedServiceLabels($request)[0] ?? 'Best fit';
+
+        return [['index' => 0, 'label' => Str::headline($label)]];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $toolTrace
+     * @param  array<int, array{index: int, label: string}>  $offerHighlights
+     * @return array<int, array<string, mixed>>
+     */
+    private function withOfferHighlights(array $toolTrace, array $offerHighlights): array
+    {
+        if ($offerHighlights === []) {
+            return $toolTrace;
+        }
+
+        $lastBundleIndex = collect($toolTrace)
+            ->keys()
+            ->reverse()
+            ->first(fn (int $index): bool => ($toolTrace[$index]['tool'] ?? null) === 'build_dynamic_bundles');
+
+        if (! is_int($lastBundleIndex) || ! is_array($toolTrace[$lastBundleIndex]['result']['recommended_picks'] ?? null)) {
+            return $toolTrace;
+        }
+
+        foreach ($offerHighlights as $highlight) {
+            $index = $highlight['index'];
+
+            if (! is_array($toolTrace[$lastBundleIndex]['result']['recommended_picks'][$index] ?? null)) {
+                continue;
+            }
+
+            $existing = is_array($toolTrace[$lastBundleIndex]['result']['recommended_picks'][$index]['highlight_pills'] ?? null)
+                ? $toolTrace[$lastBundleIndex]['result']['recommended_picks'][$index]['highlight_pills']
+                : [];
+
+            $toolTrace[$lastBundleIndex]['result']['recommended_picks'][$index]['highlight_pills'] = collect($existing)
+                ->push($highlight['label'])
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return $toolTrace;
     }
 
     private function directive(string $source, string $language): string
@@ -520,8 +806,9 @@ CHOOSING THE INFORMATION SOURCE:
 PACKAGE RECOMMENDATIONS:
 - For any flight-finding request where the user wants a recommendation, call build_dynamic_bundles after you know route, date and passengers.
 - The tools expose complete internal packages so you can choose well. Do NOT list every package or fare family.
-- Pick the most suitable custom package directly. If helpful, show one backup pick in the tool card, not as a long text list.
-- Keep the explanation practical and invitational. For recommendation tool results, say "Here are my top picks for you" and end by asking if they look good, suggesting relevant add-ons such as Wi-Fi, lounge, checked bags, fast track, changes, or refunds. Avoid route/date repetition because the cards show that.
+- Choose whether one or two offer cards should be highlighted. Do not mention unhighlighted backup picks in text.
+- For recommendation tool results, write one short dynamic sentence, e.g. "Of course, I can add Wi-Fi, here's the offer." Avoid route, date, price, package names, feature lists, and backup-pick text because the cards show that.
+- To highlight cards, append a hidden marker on its own line: [[offer_highlights:0=Best Wi-Fi fit;1=Lower price]]. Use zero-based card indexes, choose at most two highlights, and keep labels under 28 characters. The UI hides this marker.
 
 SPEECH-INPUT TOLERANCE: the message may have been dictated; speech recognition often mangles fare names. Infer the intended term when clear: ekstra play / extra flight -> ExtraFly; prime flight -> PrimeFly; eko fly -> EcoFly; fleks flay -> FlexFly. If unsure, confirm briefly.
 
@@ -696,6 +983,13 @@ PROMPT;
      */
     private function publicToolTrace(array $toolTrace): array
     {
+        if ($this->hasKnowledgeTrace($toolTrace)) {
+            $toolTrace = collect($toolTrace)
+                ->filter(fn (array $trace): bool => ($trace['tool'] ?? null) === 'search_knowledge_base')
+                ->values()
+                ->all();
+        }
+
         return collect($toolTrace)
             ->map(function (array $trace): array {
                 $toolName = (string) ($trace['tool'] ?? '');
@@ -727,7 +1021,6 @@ PROMPT;
                 'passengers' => is_array($result['passengers'] ?? null) ? $result['passengers'] : [],
                 'seat_passengers' => $result['seat_passengers'] ?? null,
                 'recommended_picks' => collect(is_array($result['recommended_picks'] ?? null) ? $result['recommended_picks'] : [])
-                    ->take(2)
                     ->values()
                     ->all(),
             ];
@@ -807,6 +1100,7 @@ PROMPT;
             'latest_refund_hours' => $fare['latest_refund_hours'] ?? null,
             'change_rule' => $fare['change_rule'] ?? null,
             'refund_rule' => $fare['refund_rule'] ?? null,
+            'highlight_pills' => is_array($fare['highlight_pills'] ?? null) ? $fare['highlight_pills'] : [],
             'base_price_usd' => $fare['base_price_usd'] ?? null,
             'price_breakdown' => is_array($fare['price_breakdown'] ?? null)
                 ? ['grand_total_usd' => $fare['price_breakdown']['grand_total_usd'] ?? null]
