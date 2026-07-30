@@ -2,6 +2,7 @@
 
 namespace App\Chatbot;
 
+use App\Support\ServiceValue;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -103,6 +104,35 @@ class ChatbotAgent
             ];
         }
 
+        $shoppingResponse = $this->localShoppingResponse($messages, $userText, $pendingPurchase, $language);
+
+        if ($shoppingResponse !== null) {
+            $messages[] = ['role' => 'assistant', 'content' => $shoppingResponse['reply']];
+            $this->sessionStore->put($sessionId, $messages, $shoppingResponse['pending_purchase']);
+
+            return [
+                'reply' => $shoppingResponse['reply'],
+                'tool_trace' => $shoppingResponse['tool_trace'],
+            ];
+        }
+
+        $guidedChoiceReply = $this->guidedChoiceReply($userText, $language);
+
+        if ($guidedChoiceReply !== null) {
+            $messages[] = ['role' => 'assistant', 'content' => $guidedChoiceReply['reply']];
+            $this->sessionStore->put($sessionId, $messages, $pendingPurchase);
+
+            return [
+                'reply' => $guidedChoiceReply['reply'],
+                'tool_trace' => [[
+                    'tool' => 'guided_choices',
+                    'result' => [
+                        'choices' => $guidedChoiceReply['choices'],
+                    ],
+                ]],
+            ];
+        }
+
         $toolTrace = [];
         $tools = $this->tools();
 
@@ -181,20 +211,483 @@ class ChatbotAgent
     }
 
     /**
+     * @return array{reply: string, choices: array<int, array{label: string, message: string}>}|null
+     */
+    private function guidedChoiceReply(string $text, string $language): ?array
+    {
+        if (! $this->shouldGuideBeforeRecommendation($text)) {
+            return null;
+        }
+
+        $choices = $this->guidedChoices($text, $language);
+        $reply = $language === 'tr'
+            ? 'Öneri göstermeden önce birkaç şeyi netleştireyim. Bu yolculukta en önemli olan ne?'
+            : 'Before I suggest flights, let me narrow this down with you. What matters most for this trip?';
+
+        return [
+            'reply' => $reply,
+            'choices' => $choices,
+        ];
+    }
+
+    private function shouldGuideBeforeRecommendation(string $text): bool
+    {
+        $normalized = Str::lower($text);
+
+        if ($this->isKnowledgeQuestion($normalized) || str_contains($normalized, 'current search form:')) {
+            return false;
+        }
+
+        return Str::contains($normalized, [
+            'recommend',
+            'suggest',
+            'find me',
+            'help me choose',
+            'best flight',
+            'cheapest',
+            'comfortable',
+            'comfort',
+            'plan a trip',
+            'want to fly',
+            'need a flight',
+            'flight to',
+            'ticket to',
+            'uçmak istiyorum',
+            'uçuş öner',
+            'bilet öner',
+            'en ucuz',
+            'konfor',
+        ]);
+    }
+
+    private function isKnowledgeQuestion(string $normalizedText): bool
+    {
+        if (preg_match('/\b(what|which|how|when|where|why|can|do|does|are|is)\b.*\b(rights?|rules?|policy|policies|cancel(?:led|lation)?|refunds?|compensation|allowance)\b/', $normalizedText) === 1) {
+            return true;
+        }
+
+        return Str::contains($normalizedText, [
+            'passenger rights',
+            'refund rule',
+            'refund policy',
+            'cancellation rule',
+            'cancellation policy',
+            'compensation',
+            'baggage allowance',
+            'bag rule',
+            'what happens',
+            'what are my',
+            'hak',
+            'kural',
+            'iptal',
+            'iade',
+            'tazminat',
+            'bagaj hakkı',
+            'yolcu hakları',
+        ]);
+    }
+
+    /**
+     * @return array<int, array{label: string, message: string}>
+     */
+    private function guidedChoices(string $text, string $language): array
+    {
+        if ($language === 'tr') {
+            return [
+                ['label' => 'En düşük fiyat', 'message' => 'Bu yolculukta en düşük fiyat benim için en önemli kriter.'],
+                ['label' => 'Bagaj ve koltuk', 'message' => 'Bagaj ve koltuk seçimi dahil bir seçenek istiyorum.'],
+                ['label' => 'Esnek değişiklik', 'message' => 'Değişiklik ve iade esnekliği olan bir seçenek istiyorum.'],
+            ];
+        }
+
+        return [
+            ['label' => 'Lowest price', 'message' => 'Lowest price matters most for this trip.'],
+            ['label' => 'Bags and seats', 'message' => 'I want bags and seat selection included.'],
+            ['label' => 'Flexible changes', 'message' => 'I want change and refund flexibility.'],
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $messages
+     * @param  array<string, mixed>|null  $pendingPurchase
+     * @return array{reply: string, tool_trace: array<int, array<string, mixed>>, pending_purchase: array<string, mixed>|null}|null
+     */
+    private function localShoppingResponse(array $messages, string $userText, ?array $pendingPurchase, string $language): ?array
+    {
+        $conversationText = $this->conversationText($messages);
+        $visibleUserText = $this->withoutSearchPrefill($userText);
+        $normalizedUserText = Str::lower($visibleUserText);
+
+        if ($this->isKnowledgeQuestion($normalizedUserText) || ! $this->shouldHandleShoppingLocally($conversationText, $visibleUserText)) {
+            return null;
+        }
+
+        if ($this->shouldGuideBeforeRecommendation($visibleUserText)
+            && ! $this->hasExplicitShoppingPriority($visibleUserText)
+            && ! $this->hasDateCue($conversationText)
+            && ! $this->hasGuidedChoiceContext($conversationText)) {
+            return null;
+        }
+
+        $request = $this->shoppingRequestFromConversation($conversationText);
+
+        $missing = collect(['origin', 'destination', 'date'])
+            ->filter(fn (string $field): bool => ! isset($request[$field]) || $request[$field] === '')
+            ->values()
+            ->all();
+
+        if ($missing !== []) {
+            return [
+                'reply' => $this->missingShoppingInfoReply($missing, $language),
+                'tool_trace' => [],
+                'pending_purchase' => $pendingPurchase,
+            ];
+        }
+
+        if (($request['trip_type'] ?? 'one_way') === 'round_trip' && ! isset($request['return_date'])) {
+            $request['return_date'] = Carbon::parse((string) $request['date'])->addDay()->toDateString();
+        }
+
+        $toolInput = [
+            'origin' => (string) $request['origin'],
+            'destination' => (string) $request['destination'],
+            'date' => (string) $request['date'],
+            'adults' => (int) ($request['adults'] ?? 1),
+            'children' => (int) ($request['children'] ?? 0),
+            'babies' => (int) ($request['babies'] ?? 0),
+            'trip_type' => (string) ($request['trip_type'] ?? 'one_way'),
+            'service_codes' => $request['service_codes'] ?? [],
+            'excluded_service_codes' => $request['excluded_service_codes'] ?? [],
+            'service_specs' => [],
+        ];
+
+        if (isset($request['return_date'])) {
+            $toolInput['return_date'] = (string) $request['return_date'];
+        }
+
+        $toolResult = $this->toolbox->dispatch('build_dynamic_bundles', $toolInput, $pendingPurchase, false);
+        $toolTrace = [[
+            'tool' => 'build_dynamic_bundles',
+            'input' => $toolInput,
+            'result' => $toolResult['result'],
+        ]];
+
+        $toolTrace = $this->withOfferHighlights($toolTrace, $this->defaultOfferHighlights($toolResult['result'], $toolInput));
+
+        return [
+            'reply' => $this->bundleReply($toolResult['result'], $toolInput, $language),
+            'tool_trace' => $this->publicToolTrace($toolTrace),
+            'pending_purchase' => $toolResult['pending_purchase'],
+        ];
+    }
+
+    private function conversationText(array $messages): string
+    {
+        return collect($messages)
+            ->filter(fn (array $message): bool => ($message['role'] ?? null) === 'user')
+            ->map(fn (array $message): string => (string) ($message['content'] ?? ''))
+            ->implode("\n");
+    }
+
+    private function shouldHandleShoppingLocally(string $conversationText, string $userText): bool
+    {
+        $normalizedConversation = Str::lower($conversationText);
+        $normalizedUserText = Str::lower($userText);
+
+        if (str_contains($normalizedUserText, 'offer')
+            && ! str_contains($normalizedUserText, 'build a custom bundle')
+            && ! str_contains($normalizedConversation, 'current search form:')) {
+            return false;
+        }
+
+        if (Str::contains($normalizedConversation, ['current search form:', 'lowest price matters', 'bags and seat selection', 'change and refund flexibility'])) {
+            return true;
+        }
+
+        return Str::contains($normalizedConversation, [
+            'cheapest',
+            'lowest',
+            'flight to',
+            'ticket to',
+            'fare to',
+            'from ',
+            ' to ',
+            'roundtrip',
+            'round trip',
+            'one way',
+            'one-way',
+            'this weekend',
+            'this weeekend',
+            'today',
+            'tomorrow',
+        ]);
+    }
+
+    private function hasExplicitShoppingPriority(string $text): bool
+    {
+        return Str::contains(Str::lower($text), [
+            'cheapest',
+            'lowest',
+            'lowest price',
+            'bags and seats',
+            'bag and seat',
+            'flexible',
+            'flexibility',
+            'comfortable',
+            'comfort',
+            'en ucuz',
+            'konfor',
+        ]);
+    }
+
+    private function hasDateCue(string $text): bool
+    {
+        return preg_match('/\b(\d{4}-\d{2}-\d{2}|today|tomorrow|this\s+wee+kend)\b/i', $text) === 1;
+    }
+
+    private function hasGuidedChoiceContext(string $text): bool
+    {
+        return Str::contains(Str::lower($text), [
+            'lowest price matters',
+            'bags and seat selection',
+            'change and refund flexibility',
+            'en düşük fiyat',
+            'bagaj ve koltuk',
+            'esnek değişiklik',
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function shoppingRequestFromConversation(string $conversationText): array
+    {
+        $request = [
+            'adults' => 1,
+            'children' => 0,
+            'babies' => 0,
+            'trip_type' => Str::contains(Str::lower($conversationText), ['roundtrip', 'round trip', 'return trip', 'gidiş dönüş'])
+                ? 'round_trip'
+                : 'one_way',
+            'service_codes' => $this->shoppingServiceCodes($conversationText),
+            'excluded_service_codes' => [],
+        ];
+
+        $visibleConversationText = $this->withoutSearchPrefill($conversationText);
+
+        $this->applyPrefillContext($request, $conversationText);
+        $this->applyRouteContext($request, $visibleConversationText);
+        $this->applyPassengerContext($request, $conversationText);
+        $this->applyDateContext($request, $conversationText);
+
+        return $request;
+    }
+
+    private function withoutSearchPrefill(string $conversationText): string
+    {
+        return preg_replace(
+            '/\n*current search form:.*?(?:knowledge-base questions\.|$)/is',
+            '',
+            $conversationText,
+        ) ?? $conversationText;
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function applyPrefillContext(array &$request, string $conversationText): void
+    {
+        if (preg_match_all('/current search form:\s*from\s+([a-z]{3})\s+to\s+([a-z]{3})\s+on\s+(\d{4}-\d{2}-\d{2})(?:\.\s*return on\s+(\d{4}-\d{2}-\d{2}))?.*?passengers:\s*adults\s+(\d+),\s*children\s+(\d+),\s*babies\s+(\d+)/is', $conversationText, $matches, PREG_SET_ORDER) < 1) {
+            return;
+        }
+
+        $match = array_pop($matches);
+        $request['origin'] = Str::upper($match[1]);
+        $request['destination'] = Str::upper($match[2]);
+        $request['date'] = $match[3];
+        $request['adults'] = (int) $match[5];
+        $request['children'] = (int) $match[6];
+        $request['babies'] = (int) $match[7];
+
+        if (($match[4] ?? '') !== '') {
+            $request['trip_type'] = 'round_trip';
+            $request['return_date'] = $match[4];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function applyRouteContext(array &$request, string $conversationText): void
+    {
+        if (preg_match_all('/\bfrom\s+([a-zçğıöşü\s]{2,30}?)\s+to\s+([a-zçğıöşü\s]{2,30}?)(?:\s+(?:on|today|tomorrow|this|round|one|with|and|for|preferred)|[.?!,\n]|$)/iu', $conversationText, $matches, PREG_SET_ORDER) > 0) {
+            $match = array_pop($matches);
+            $request['origin'] = $this->airportCodeFromText($match[1], 'origin') ?? ($request['origin'] ?? null);
+            $request['destination'] = $this->airportCodeFromText($match[2], 'destination') ?? ($request['destination'] ?? null);
+        }
+
+        if (preg_match_all('/\bto\s+([a-zçğıöşü\s]{2,30}?)(?:\s+(?:this|today|tomorrow|on|from|with|for|and)|[.?!,\n]|$)/iu', $conversationText, $matches, PREG_SET_ORDER) > 0) {
+            $match = array_pop($matches);
+            $request['destination'] = $this->airportCodeFromText($match[1], 'destination') ?? ($request['destination'] ?? null);
+        }
+
+        if (preg_match_all('/\bfrom\s+([a-zçğıöşü\s]{2,30}?)(?:\s+(?:this|today|tomorrow|on|to|with|for|and)|[.?!,\n]|$)/iu', $conversationText, $matches, PREG_SET_ORDER) > 0) {
+            $match = array_pop($matches);
+            $request['origin'] = $this->airportCodeFromText($match[1], 'origin') ?? ($request['origin'] ?? null);
+        }
+
+        if (! isset($request['origin']) && preg_match_all('/\b(IST|SAW|AMS|CDG|FRA|DXB|JFK|SIN)\b/i', $conversationText, $matches) > 0) {
+            $request['origin'] = Str::upper((string) end($matches[1]));
+        }
+    }
+
+    private function airportCodeFromText(string $value, string $slot): ?string
+    {
+        $normalized = Str::of($value)->lower()->squish()->toString();
+        $codeCandidate = Str::upper($normalized);
+
+        if (preg_match('/^[A-Z]{3}$/', $codeCandidate) === 1) {
+            return $codeCandidate;
+        }
+
+        if (str_contains($normalized, 'sabiha') || $normalized === 'saw') {
+            return 'SAW';
+        }
+
+        return match (true) {
+            str_contains($normalized, 'istanbul') || $normalized === 'ist' => 'IST',
+            str_contains($normalized, 'london') || $normalized === 'lhr' => 'LHR',
+            str_contains($normalized, 'amsterdam') || $normalized === 'ams' => 'AMS',
+            str_contains($normalized, 'paris') || $normalized === 'cdg' => 'CDG',
+            str_contains($normalized, 'new york') || $normalized === 'jfk' => 'JFK',
+            str_contains($normalized, 'singapore') || $normalized === 'sin' => 'SIN',
+            default => $slot === 'origin' && str_contains($normalized, 'here') ? 'IST' : null,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function applyPassengerContext(array &$request, string $conversationText): void
+    {
+        if (preg_match_all('/\b(\d+)\s+adults?\b/i', $conversationText, $matches) > 0) {
+            $request['adults'] = (int) end($matches[1]);
+        }
+
+        if (preg_match_all('/\badults?\s+(\d+)\b/i', $conversationText, $matches) > 0) {
+            $request['adults'] = (int) end($matches[1]);
+        }
+
+        if (preg_match_all('/\b(\d+)\s+(?:children|child|kids?)\b/i', $conversationText, $matches) > 0) {
+            $request['children'] = (int) end($matches[1]);
+        }
+
+        if (preg_match_all('/\b(?:children|child|kids?)\s+(\d+)\b/i', $conversationText, $matches) > 0) {
+            $request['children'] = (int) end($matches[1]);
+        }
+
+        if (preg_match_all('/\b(\d+)\s+(?:babies|baby|infants?)\b/i', $conversationText, $matches) > 0) {
+            $request['babies'] = (int) end($matches[1]);
+        }
+
+        if (preg_match_all('/\b(?:babies|baby|infants?)\s+(\d+)\b/i', $conversationText, $matches) > 0) {
+            $request['babies'] = (int) end($matches[1]);
+        }
+
+        if (Str::contains(Str::lower($conversationText), ['1 adult only', 'one adult only', 'just me'])) {
+            $request['adults'] = 1;
+            $request['children'] = 0;
+            $request['babies'] = 0;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function applyDateContext(array &$request, string $conversationText): void
+    {
+        $normalized = Str::lower($conversationText);
+
+        if (preg_match_all('/\b(\d{4}-\d{2}-\d{2})\b/', $conversationText, $matches) > 0) {
+            $request['date'] = end($matches[1]);
+        }
+
+        if (str_contains($normalized, 'today')) {
+            $request['date'] = Carbon::today()->toDateString();
+        } elseif (str_contains($normalized, 'tomorrow')) {
+            $request['date'] = Carbon::tomorrow()->toDateString();
+        } elseif (preg_match('/\bthis\s+wee+kend\b/', $normalized) === 1) {
+            $weekendStart = Carbon::today()->next(Carbon::SATURDAY);
+            $request['date'] = $weekendStart->toDateString();
+
+            if (($request['trip_type'] ?? 'one_way') === 'round_trip') {
+                $request['return_date'] = $weekendStart->copy()->addDay()->toDateString();
+            }
+        }
+
+        if (preg_match_all('/\breturn(?:ing)?\s+(?:on\s+)?(\d{4}-\d{2}-\d{2})\b/i', $conversationText, $matches) > 0) {
+            $request['trip_type'] = 'round_trip';
+            $request['return_date'] = end($matches[1]);
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function shoppingServiceCodes(string $conversationText): array
+    {
+        $normalized = Str::lower($conversationText);
+
+        if (Str::contains($normalized, ['bag and seat', 'bags and seat', 'bagaj ve koltuk'])) {
+            return ['CHECKED_BAG', 'SEAT_SELECTION'];
+        }
+
+        if (Str::contains($normalized, ['change and refund flexibility', 'flexible changes', 'flexibility', 'esnek değişiklik'])) {
+            return ['CHANGE_ALLOWED', 'REFUNDABLE'];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<int, string>  $missing
+     */
+    private function missingShoppingInfoReply(array $missing, string $language): string
+    {
+        if ($language === 'tr') {
+            return match ($missing[0] ?? '') {
+                'origin' => 'Nereden uçmak istiyorsun? Aksi belirtilmezse 1 yetişkin olarak devam edeceğim.',
+                'destination' => 'Nereye uçmak istiyorsun? Aksi belirtilmezse 1 yetişkin olarak devam edeceğim.',
+                'date' => 'Ne zaman uçmak istiyorsun? Bugün, yarın veya bu hafta sonu diyebilirsin; 1 yetişkin varsayacağım.',
+                default => 'Rota ve tarihi netleştirir misin? Aksi belirtilmezse 1 yetişkin olarak devam edeceğim.',
+            };
+        }
+
+        return match ($missing[0] ?? '') {
+            'origin' => 'Where are you flying from? I will use 1 adult unless you tell me otherwise.',
+            'destination' => 'Where are you flying to? I will use 1 adult unless you tell me otherwise.',
+            'date' => 'When do you want to fly? You can say today, tomorrow, or this weekend; I will use 1 adult unless you tell me otherwise.',
+            default => 'Please share the route and date. I will use 1 adult unless you tell me otherwise.',
+        };
+    }
+
+    /**
      * @return array{origin: string, destination: string, date: string, trip_type?: string, return_date?: string, service_codes: array<int, string>, excluded_service_codes: array<int, string>, service_specs: array<int, array<string, mixed>>}|null
      */
     private function parseBundleRequest(string $text): ?array
     {
-        if (! str_contains(Str::lower($text), 'bundle')) {
+        $requestText = $this->withoutSearchPrefill($text);
+
+        if (! str_contains(Str::lower($requestText), 'bundle')) {
             return null;
         }
 
-        if (preg_match('/\bfrom\s+([a-z]{3})\s+to\s+([a-z]{3})\s+on\s+(\d{4}-\d{2}-\d{2})\b/i', $text, $matches) !== 1) {
+        if (preg_match('/\bfrom\s+([a-z]{3})\s+to\s+([a-z]{3})\s+on\s+(\d{4}-\d{2}-\d{2})\b/i', $requestText, $matches) !== 1) {
             return null;
         }
 
-        $excludedServiceCodes = $this->parseExcludedServiceCodes($text);
-        $serviceSpecs = $this->parseServiceSpecs($text, $excludedServiceCodes);
+        $excludedServiceCodes = $this->parseExcludedServiceCodes($requestText);
+        $serviceSpecs = $this->parseServiceSpecs($requestText, $excludedServiceCodes);
         $serviceSpecCodes = collect($serviceSpecs)
             ->pluck('service_code')
             ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
@@ -204,16 +697,18 @@ class ChatbotAgent
             'origin' => Str::upper($matches[1]),
             'destination' => Str::upper($matches[2]),
             'date' => $matches[3],
-            'service_codes' => array_values(array_diff($this->parsePreferredServiceCodes($text), $excludedServiceCodes, $serviceSpecCodes)),
+            'service_codes' => array_values(array_diff($this->parsePreferredServiceCodes($requestText), $excludedServiceCodes, $serviceSpecCodes)),
             'excluded_service_codes' => $excludedServiceCodes,
             'service_specs' => $serviceSpecs,
         ];
 
-        if (preg_match('/\breturn(?:ing)?\s+(?:on\s+)?(\d{4}-\d{2}-\d{2})\b/i', $text, $returnMatches) === 1
-            || preg_match('/\bround\s*trip\b.*?\b(\d{4}-\d{2}-\d{2})\b/i', $text, $returnMatches) === 1) {
+        if (preg_match('/\breturn(?:ing)?\s+(?:on\s+)?(\d{4}-\d{2}-\d{2})\b/i', $requestText, $returnMatches) === 1
+            || preg_match('/\bround\s*trip\b.*?\b(\d{4}-\d{2}-\d{2})\b/i', $requestText, $returnMatches) === 1) {
             $request['trip_type'] = 'round_trip';
             $request['return_date'] = $returnMatches[1];
         }
+
+        $this->applyPassengerContext($request, $requestText);
 
         return $request;
     }
@@ -437,11 +932,9 @@ class ChatbotAgent
                 : 'I could not find a suitable package for that route and date. Try another date.';
         }
 
-        $reply = $language === 'tr'
-            ? $this->turkishBundleReply($request)
-            : $this->englishBundleReply($request);
-
-        return $reply;
+        return $language === 'tr'
+            ? $this->turkishBundleReply($request, $pick)
+            : $this->englishBundleReply($request, $pick, $result);
     }
 
     /**
@@ -484,17 +977,24 @@ class ChatbotAgent
     /**
      * @param  array<string, mixed>  $request
      */
-    private function englishBundleReply(array $request): string
+    private function englishBundleReply(array $request, array $pick, array $result): string
     {
-        $additions = $this->requestedServiceLabels($request);
+        $requestedServiceCodes = $this->requestedServiceCodes($request);
+        $included = $this->serviceLabelsForPick($pick, $requestedServiceCodes, true);
+        $missing = $this->serviceLabelsForPick($pick, $requestedServiceCodes, false);
         $exclusions = $this->excludedServiceLabels($request);
+        $route = $this->routeLabelFromResult($result);
 
-        if ($additions !== [] && $exclusions !== []) {
-            return "Of course, I can add {$this->joinLabels($additions)} and keep it without {$this->joinLabels($exclusions)}, here's the offer.";
+        if ($included !== [] && $missing !== []) {
+            return "I found an offer with {$this->joinLabels($included)}, but {$this->joinLabels($missing)} ".(count($missing) === 1 ? 'is' : 'are').' not included on this fare.';
         }
 
-        if ($additions !== []) {
-            return "Of course, I can add {$this->joinLabels($additions)}, here's the offer.";
+        if ($included !== []) {
+            return "I found an offer that includes {$this->joinLabels($included)}, here's the offer.";
+        }
+
+        if ($missing !== []) {
+            return "I found the lowest available offer{$route}, but {$this->joinLabels($missing)} ".(count($missing) === 1 ? 'is' : 'are').' not included on this fare.';
         }
 
         if ($exclusions !== []) {
@@ -507,17 +1007,23 @@ class ChatbotAgent
     /**
      * @param  array<string, mixed>  $request
      */
-    private function turkishBundleReply(array $request): string
+    private function turkishBundleReply(array $request, array $pick): string
     {
-        $additions = $this->requestedServiceLabels($request);
+        $requestedServiceCodes = $this->requestedServiceCodes($request);
+        $included = $this->serviceLabelsForPick($pick, $requestedServiceCodes, true);
+        $missing = $this->serviceLabelsForPick($pick, $requestedServiceCodes, false);
         $exclusions = $this->excludedServiceLabels($request);
 
-        if ($additions !== [] && $exclusions !== []) {
-            return "{$this->joinLabels($additions)} ekleyip {$this->joinLabels($exclusions)} olmadan hazırlayabilirim; teklifin burada.";
+        if ($included !== [] && $missing !== []) {
+            return "{$this->joinLabels($included)} içeren bir teklif buldum, fakat bu ücrette {$this->joinLabels($missing)} dahil değil.";
         }
 
-        if ($additions !== []) {
-            return "{$this->joinLabels($additions)} ekleyebilirim; teklifin burada.";
+        if ($included !== []) {
+            return "{$this->joinLabels($included)} içeren bir teklif buldum; teklifin burada.";
+        }
+
+        if ($missing !== []) {
+            return "En düşük uygun teklifi buldum, fakat bu ücrette {$this->joinLabels($missing)} dahil değil.";
         }
 
         if ($exclusions !== []) {
@@ -538,6 +1044,19 @@ class ChatbotAgent
      */
     private function requestedServiceLabels(array $request): array
     {
+        return collect($this->requestedServiceCodes($request))
+            ->map(fn (string $serviceCode): string => $this->serviceLabel($serviceCode))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     * @return array<int, string>
+     */
+    private function requestedServiceCodes(array $request): array
+    {
         $serviceCodes = collect(is_array($request['service_codes'] ?? null) ? $request['service_codes'] : []);
         $serviceSpecs = collect(is_array($request['service_specs'] ?? null) ? $request['service_specs'] : [])
             ->pluck('service_code');
@@ -545,10 +1064,69 @@ class ChatbotAgent
         return $serviceCodes
             ->merge($serviceSpecs)
             ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $pick
+     * @param  array<int, string>  $serviceCodes
+     * @return array<int, string>
+     */
+    private function serviceLabelsForPick(array $pick, array $serviceCodes, bool $included): array
+    {
+        return collect($serviceCodes)
+            ->filter(fn (string $serviceCode): bool => $this->pickIncludesServiceCode($pick, $serviceCode) === $included)
             ->map(fn (string $serviceCode): string => $this->serviceLabel($serviceCode))
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $pick
+     */
+    private function pickIncludesServiceCode(array $pick, string $serviceCode): bool
+    {
+        return match ($serviceCode) {
+            'CHECKED_BAG' => (int) ($pick['checked_baggage_kg'] ?? 0) > 0,
+            'CABIN_BAG' => (int) ($pick['cabin_baggage_kg'] ?? 0) > 0,
+            'SEAT_SELECTION' => (bool) ($pick['seat_selection_free'] ?? false)
+                || $this->pickServiceIsEnabled($pick, 'SEAT_STANDARD')
+                || $this->pickServiceIsEnabled($pick, 'SEAT_EXIT_ROW'),
+            'SEAT_STANDARD', 'SEAT_EXIT_ROW' => $this->pickServiceIsEnabled($pick, $serviceCode),
+            'CHANGE_ALLOWED' => ($pick['latest_change_hours'] ?? null) !== null,
+            'REFUNDABLE' => ($pick['latest_refund_hours'] ?? null) !== null,
+            'WIFI' => $this->pickServiceIsEnabled($pick, 'WIFI')
+                || $this->pickServiceIsEnabled($pick, 'WIFI_1GB')
+                || $this->pickServiceIsEnabled($pick, 'WIFI_5GB')
+                || $this->pickServiceIsEnabled($pick, 'WIFI_UNLIMITED'),
+            default => $this->pickServiceIsEnabled($pick, $serviceCode),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $pick
+     */
+    private function pickServiceIsEnabled(array $pick, string $serviceCode): bool
+    {
+        $service = collect(is_array($pick['services'] ?? null) ? $pick['services'] : [])
+            ->first(fn (mixed $service): bool => is_array($service) && ($service['code'] ?? null) === $serviceCode);
+
+        return is_array($service) && ServiceValue::isEnabled($service['value'] ?? null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function routeLabelFromResult(array $result): string
+    {
+        $flight = is_array($result['flight'] ?? null) ? $result['flight'] : [];
+        $origin = (string) ($flight['origin'] ?? '');
+        $destination = (string) ($flight['destination'] ?? '');
+
+        return $origin !== '' && $destination !== '' ? " for {$origin}-{$destination}" : '';
     }
 
     /**
@@ -725,9 +1303,50 @@ class ChatbotAgent
             return [];
         }
 
-        $label = $this->requestedServiceLabels($request)[0] ?? 'Best fit';
+        $pick = $picks->first();
+
+        if (! is_array($pick)) {
+            return [];
+        }
+
+        $requestedServiceCodes = $this->requestedServiceCodes($request);
+        $included = $this->serviceLabelsForPick($pick, $requestedServiceCodes, true);
+
+        if ($included !== []) {
+            return [['index' => 0, 'label' => Str::headline($included[0])]];
+        }
+
+        $label = $this->bestActualHighlight($pick);
 
         return [['index' => 0, 'label' => Str::headline($label)]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $pick
+     */
+    private function bestActualHighlight(array $pick): string
+    {
+        if (($pick['customized'] ?? false) === true) {
+            return 'custom offer';
+        }
+
+        if ((int) ($pick['checked_baggage_kg'] ?? 0) > 0) {
+            return ((int) $pick['checked_baggage_kg']).' kg checked bag';
+        }
+
+        if (($pick['latest_refund_hours'] ?? null) !== null) {
+            return 'refundable';
+        }
+
+        if (($pick['latest_change_hours'] ?? null) !== null) {
+            return 'changeable';
+        }
+
+        if ((int) ($pick['cabin_baggage_kg'] ?? 0) > 0) {
+            return ((int) $pick['cabin_baggage_kg']).' kg cabin bag';
+        }
+
+        return 'lowest fare';
     }
 
     /**
@@ -1021,6 +1640,7 @@ PROMPT;
                 'passengers' => is_array($result['passengers'] ?? null) ? $result['passengers'] : [],
                 'seat_passengers' => $result['seat_passengers'] ?? null,
                 'recommended_picks' => collect(is_array($result['recommended_picks'] ?? null) ? $result['recommended_picks'] : [])
+                    ->take(2)
                     ->values()
                     ->all(),
             ];

@@ -14,21 +14,23 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard, home } from '@/routes';
 import type { NavItem } from '@/types';
-
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-    {
-        title: 'Search flights',
-        href: home(),
-        icon: Plane,
-    },
-];
+import { useTranslation } from '@/lib/i18n';
 
 export function AppSidebar() {
+    const { t } = useTranslation();
+    const mainNavItems: NavItem[] = [
+        {
+            title: t('app.dashboard'),
+            href: dashboard(),
+            icon: LayoutGrid,
+        },
+        {
+            title: t('app.searchFlights'),
+            href: home(),
+            icon: Plane,
+        },
+    ];
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>

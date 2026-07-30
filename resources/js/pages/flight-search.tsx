@@ -62,7 +62,7 @@ export default function FlightSearch({
     function submit(event: SearchFormSubmit) {
         event.preventDefault();
 
-        router.post(
+        router.get(
             '/search',
             {
                 ...form,

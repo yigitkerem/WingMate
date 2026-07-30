@@ -184,8 +184,8 @@ class AirlineDemoSeeder extends Seeder
     private function seedServices(array $bundles): array
     {
         $services = collect([
-            ['CHECKED_BAG', 'Checked baggage', 'BAG', 'integer', 'kg', 35, 3],
-            ['CABIN_BAG', 'Cabin baggage', 'BAG', 'integer', 'kg', 15, 1],
+            ['CHECKED_BAG', 'Checked baggage', 'BAG', 'integer', 'kg', 4, 50],
+            ['CABIN_BAG', 'Cabin baggage', 'BAG', 'integer', 'kg', 5, 12],
             ['SEAT_SELECTION', 'Seat selection', 'SEAT', 'boolean', 'seat', 18, 1],
             ['SEAT_STANDARD', 'Standard seat selection', 'SEAT', 'string', 'seat', 12, 1],
             ['SEAT_EXIT_ROW', 'Exit row seat selection', 'SEAT', 'string', 'seat', 32, 1],
@@ -249,8 +249,14 @@ class AirlineDemoSeeder extends Seeder
         ServiceConstraint::query()->create([
             'service_id' => $services['CHECKED_BAG']->id,
             'type' => 'max_quantity',
-            'parameters' => ['quantity' => 3],
-            'message' => 'At most three checked bags can be selected.',
+            'parameters' => ['quantity' => 50],
+            'message' => 'At most 50 kg of checked baggage can be selected.',
+        ]);
+        ServiceConstraint::query()->create([
+            'service_id' => $services['CABIN_BAG']->id,
+            'type' => 'max_quantity',
+            'parameters' => ['quantity' => 12],
+            'message' => 'At most 12 kg of cabin baggage can be selected.',
         ]);
 
         return $services;

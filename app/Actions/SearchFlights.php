@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Pricing\OfferBuilder;
 use App\Support\ServiceValue;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class SearchFlights
 {
@@ -54,10 +55,17 @@ class SearchFlights
                 ->filter(fn (BaseFare $baseFare): bool => (bool) $baseFare->bundle->public)
                 ->sortBy('bundle.display_order')
                 ->take(5))
-            ->map(fn (BaseFare $baseFare): array => $this->formatOffer(
-                $this->offerBuilder->build($baseFare, $adults, $children, $infants, $user),
-                $seatPassengers,
-            ))
+            ->map(function (BaseFare $baseFare) use ($adults, $children, $infants, $user, $seatPassengers): ?array {
+                try {
+                    return $this->formatOffer(
+                        $this->offerBuilder->build($baseFare, $adults, $children, $infants, $user),
+                        $seatPassengers,
+                    );
+                } catch (ValidationException) {
+                    return null;
+                }
+            })
+            ->filter()
             ->values()
             ->all();
 

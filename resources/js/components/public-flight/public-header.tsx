@@ -6,6 +6,8 @@ import {
     Plane,
     UserRound,
 } from 'lucide-react';
+import { LanguageSwitcher } from '@/components/language-switcher';
+import { useTranslation } from '@/lib/i18n';
 import { dashboard, login, register } from '@/routes';
 import type { CustomerSummary } from '@/types/flight-search';
 
@@ -21,7 +23,7 @@ export function PublicHeader({ customer, onOpenChat }: PublicHeaderProps) {
                 className="absolute inset-0 bg-cover bg-center opacity-75"
                 style={{ backgroundImage: "url('/assets/team_hero.jpg')" }}
             />
-            <div className="absolute inset-0 bg-linear-to-b from-black/75 via-black/20 to-black/70" />
+            <div className="absolute inset-0 bg-linear-to-b from-black/45 via-black/10 to-black/40" />
 
             <div className="relative z-10">
                 <TopStrip />
@@ -33,18 +35,24 @@ export function PublicHeader({ customer, onOpenChat }: PublicHeaderProps) {
 }
 
 function TopStrip() {
+    const { t } = useTranslation();
+
     return (
         <div className="border-b border-white/10 text-[13px] font-medium text-white/90">
             <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-2">
-                <span>Turkiye · English · USD</span>
+                <span>
+                    {t('public.country')} · {t('public.currency')}
+                </span>
+                <LanguageSwitcher className="sm:hidden" variant="light" />
                 <div className="hidden items-center gap-4 sm:flex">
                     <a className="hover:text-white" href="#services">
-                        Help
+                        {t('public.help')}
                     </a>
                     <a className="hover:text-white" href="#featured-fares">
-                        Campaigns
+                        {t('public.campaigns')}
                     </a>
                     <span>Miles&Smiles</span>
+                    <LanguageSwitcher variant="light" />
                 </div>
             </div>
         </div>
@@ -52,6 +60,8 @@ function TopStrip() {
 }
 
 function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
+    const { t } = useTranslation();
+
     return (
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-5 px-6 py-4">
             <Link href="/" className="flex min-w-0 items-center gap-3">
@@ -61,10 +71,10 @@ function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
                     alt="Turkish Airlines logo"
                 />
                 <span className="min-w-0 leading-none">
-                    <span className="block text-[23px] font-black tracking-normal">
+                    <span className="block font-display text-[23px] font-black tracking-normal">
                         TURKISH AIRLINES
                     </span>
-                    <span className="mt-1 block text-[11px] font-bold tracking-[0.25em] text-white/70">
+                    <span className="mt-1 block font-condensed text-[11px] font-bold tracking-[0.25em] text-white/70">
                         WIDEN YOUR WORLD
                     </span>
                 </span>
@@ -76,21 +86,21 @@ function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
                     href="#booking"
                 >
                     <Plane className="size-4" />
-                    Flight Planning
+                    {t('public.flightPlanning')}
                 </a>
                 <a
                     className="inline-flex items-center gap-1.5 hover:text-white"
                     href="#services"
                 >
                     <Briefcase className="size-4" />
-                    Check-in and Manage
+                    {t('public.checkManage')}
                 </a>
                 <a
                     className="inline-flex items-center gap-1.5 hover:text-white"
                     href="#results"
                 >
                     <CalendarDays className="size-4" />
-                    Flight Status
+                    {t('public.flightStatus')}
                 </a>
                 {onOpenChat && (
                     <button
@@ -111,7 +121,7 @@ function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
                         className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/80 px-4 text-sm font-bold text-white transition-colors hover:bg-white hover:text-red-800"
                     >
                         <UserRound className="size-4" />
-                        Dashboard
+                        {t('app.dashboard')}
                     </Link>
                 ) : (
                     <>
@@ -119,13 +129,13 @@ function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
                             href={register()}
                             className="hidden h-10 items-center justify-center rounded-md border border-white/80 px-4 text-sm font-bold text-white transition-colors hover:bg-white hover:text-red-800 sm:inline-flex"
                         >
-                            Join
+                            {t('public.join')}
                         </Link>
                         <Link
                             href={login()}
                             className="inline-flex h-10 items-center justify-center rounded-md border border-white/80 px-4 text-sm font-bold text-white transition-colors hover:bg-white hover:text-red-800"
                         >
-                            Log in
+                            {t('public.login')}
                         </Link>
                     </>
                 )}
@@ -135,14 +145,15 @@ function MainNav({ customer, onOpenChat }: PublicHeaderProps) {
 }
 
 function HeroCopy() {
+    const { t } = useTranslation();
+
     return (
         <div className="mx-auto max-w-6xl px-6 pt-24 pb-48">
-            <h1 className="max-w-3xl text-4xl leading-tight font-black tracking-normal text-white md:text-[54px]">
-                Widen Your World
+            <h1 className="max-w-3xl font-display text-4xl leading-tight font-black tracking-normal text-white md:text-[54px]">
+                {t('public.heroTitle')}
             </h1>
             <p className="mt-4 max-w-xl text-[15px] leading-6 font-medium text-white/90">
-                Flights to more than 300 destinations, clear fare choices, and
-                wingo guidance when you want help choosing.
+                {t('public.heroCopy')}
             </p>
         </div>
     );

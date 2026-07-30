@@ -6,6 +6,7 @@ use App\Actions\SearchFlights;
 use App\Http\Requests\SearchFlightsRequest;
 use App\Models\Airport;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,38 +27,52 @@ class FlightSearchController extends Controller
         ]);
     }
 
-    public function search(SearchFlightsRequest $request, SearchFlights $searchFlights): Response
+    public function search(SearchFlightsRequest $request, SearchFlights $searchFlights): Response|RedirectResponse
     {
-        $validated = $request->validated();
-        $validated['search_mode'] = $request->user()?->is_admin ? $validated['search_mode'] : 'basic';
-        $seatPassengers = ($validated['adults'] ?? 1) + ($validated['children'] ?? 0);
+        if (! $request->isSearchAttempt()) {
+            return to_route('home');
+        }
 
-        return $this->renderSearchPage($validated, [
+        $validated = $request->validated();
+        $filters = [
+            'origin_airport_id' => (int) $validated['origin_airport_id'],
+            'destination_airport_id' => (int) $validated['destination_airport_id'],
+            'trip_type' => $validated['trip_type'],
+            'depart_date' => $validated['depart_date'],
+            'return_date' => $validated['return_date'] ?? null,
+            'search_mode' => $request->user()?->is_admin ? $validated['search_mode'] : 'basic',
+            'adults' => (int) $validated['adults'],
+            'children' => (int) $validated['children'],
+            'babies' => (int) $validated['babies'],
+        ];
+        $seatPassengers = $filters['adults'] + $filters['children'];
+
+        return $this->renderSearchPage($filters, [
             'seat_passengers' => $seatPassengers,
             'outbound' => $searchFlights->execute(
-                $validated['origin_airport_id'],
-                $validated['destination_airport_id'],
-                $validated['depart_date'],
-                $validated['search_mode'],
+                $filters['origin_airport_id'],
+                $filters['destination_airport_id'],
+                $filters['depart_date'],
+                $filters['search_mode'],
                 $seatPassengers,
-                $validated['trip_type'],
-                $validated['adults'],
-                $validated['children'],
-                $validated['babies'],
+                $filters['trip_type'],
+                $filters['adults'],
+                $filters['children'],
+                $filters['babies'],
                 $request->user(),
                 1,
             ),
-            'return' => $validated['trip_type'] === 'round_trip'
+            'return' => $filters['trip_type'] === 'round_trip'
                 ? $searchFlights->execute(
-                    $validated['destination_airport_id'],
-                    $validated['origin_airport_id'],
-                    $validated['return_date'],
-                    $validated['search_mode'],
+                    $filters['destination_airport_id'],
+                    $filters['origin_airport_id'],
+                    $filters['return_date'],
+                    $filters['search_mode'],
                     $seatPassengers,
-                    $validated['trip_type'],
-                    $validated['adults'],
-                    $validated['children'],
-                    $validated['babies'],
+                    $filters['trip_type'],
+                    $filters['adults'],
+                    $filters['children'],
+                    $filters['babies'],
                     $request->user(),
                     2,
                 )

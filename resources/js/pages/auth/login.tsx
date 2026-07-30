@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { useTranslation } from '@/lib/i18n';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
@@ -18,9 +19,11 @@ type Props = {
 };
 
 export default function Login({ status, canResetPassword }: Props) {
+    const { t } = useTranslation();
+
     return (
         <>
-            <Head title="Log in" />
+            <Head title={t('public.login')} />
 
             <Form
                 {...store.form()}
@@ -41,7 +44,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                     htmlFor="email"
                                     className="font-bold text-slate-700"
                                 >
-                                    Email address
+                                    {t('auth.email')}
                                 </Label>
                                 <Input
                                     id="email"
@@ -63,7 +66,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                         htmlFor="password"
                                         className="font-bold text-slate-700"
                                     >
-                                        Password
+                                        {t('auth.password')}
                                     </Label>
                                     {canResetPassword && (
                                         <TextLink
@@ -71,7 +74,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                             className="ml-auto text-sm font-semibold text-red-800 decoration-red-200 hover:text-red-950"
                                             tabIndex={5}
                                         >
-                                            Forgot your password?
+                                            {t('auth.forgotPassword')}
                                         </TextLink>
                                     )}
                                 </div>
@@ -81,7 +84,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                     required
                                     tabIndex={2}
                                     autoComplete="current-password"
-                                    placeholder="Password"
+                                    placeholder={t('auth.password')}
                                     className="h-11 border-slate-200 bg-slate-50 text-slate-950 focus-visible:border-red-800 focus-visible:ring-red-800/15"
                                 />
                                 <InputError message={errors.password} />
@@ -97,7 +100,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                     htmlFor="remember"
                                     className="font-semibold text-slate-600"
                                 >
-                                    Remember me
+                                    {t('auth.rememberMe')}
                                 </Label>
                             </div>
 
@@ -110,18 +113,18 @@ export default function Login({ status, canResetPassword }: Props) {
                             >
                                 {processing && <Spinner />}
                                 {!processing && <LogIn className="size-4" />}
-                                Log in
+                                {t('public.login')}
                             </Button>
                         </div>
 
                         <div className="text-center text-sm font-medium text-slate-500">
-                            Don't have an account?{' '}
+                            {t('auth.noAccount')}{' '}
                             <TextLink
                                 href={register()}
                                 tabIndex={5}
                                 className="font-bold text-red-800 decoration-red-200 hover:text-red-950"
                             >
-                                Sign up
+                                {t('auth.register')}
                             </TextLink>
                         </div>
                     </>

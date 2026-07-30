@@ -238,12 +238,19 @@ class ChatbotToolbox
         $picks = collect(is_array($firstFlight['fares'] ?? null) ? $firstFlight['fares'] : [])
             ->filter(fn (array $fare): bool => ($fare['available'] ?? false) === true)
             ->map(fn (array $fare): array => $this->customizeFareForDemand($fare, $toolInput, $preferredServices, $excludedServices, $serviceSpecs))
-            ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices): int {
+            ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices, $serviceSpecs): int {
                 $firstExcludedCount = $this->includedExcludedServiceCount($firstFare, $excludedServices);
                 $secondExcludedCount = $this->includedExcludedServiceCount($secondFare, $excludedServices);
 
                 if ($firstExcludedCount !== $secondExcludedCount) {
                     return $firstExcludedCount <=> $secondExcludedCount;
+                }
+
+                $firstMissingSpecCount = $this->missingRequestedSpecCount($firstFare, $serviceSpecs);
+                $secondMissingSpecCount = $this->missingRequestedSpecCount($secondFare, $serviceSpecs);
+
+                if ($firstMissingSpecCount !== $secondMissingSpecCount) {
+                    return $firstMissingSpecCount <=> $secondMissingSpecCount;
                 }
 
                 $firstMissingCount = $this->missingPreferredServiceCount($firstFare, $preferredServices);
@@ -289,12 +296,19 @@ class ChatbotToolbox
                     ...$toolInput,
                     'date' => (string) $toolInput['return_date'],
                 ], $preferredServices, $excludedServices, $serviceSpecs))
-                ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices): int {
+                ->sort(function (array $firstFare, array $secondFare) use ($preferredServices, $excludedServices, $serviceSpecs): int {
                     $firstExcludedCount = $this->includedExcludedServiceCount($firstFare, $excludedServices);
                     $secondExcludedCount = $this->includedExcludedServiceCount($secondFare, $excludedServices);
 
                     if ($firstExcludedCount !== $secondExcludedCount) {
                         return $firstExcludedCount <=> $secondExcludedCount;
+                    }
+
+                    $firstMissingSpecCount = $this->missingRequestedSpecCount($firstFare, $serviceSpecs);
+                    $secondMissingSpecCount = $this->missingRequestedSpecCount($secondFare, $serviceSpecs);
+
+                    if ($firstMissingSpecCount !== $secondMissingSpecCount) {
+                        return $firstMissingSpecCount <=> $secondMissingSpecCount;
                     }
 
                     $firstMissingCount = $this->missingPreferredServiceCount($firstFare, $preferredServices);
@@ -492,6 +506,25 @@ class ChatbotToolbox
             ->all();
 
         return count(array_diff($preferredServices, $codes));
+    }
+
+    /**
+     * @param  array<string, mixed>  $fare
+     * @param  array<int, array<string, mixed>>  $serviceSpecs
+     */
+    private function missingRequestedSpecCount(array $fare, array $serviceSpecs): int
+    {
+        $codes = collect(is_array($fare['services'] ?? null) ? $fare['services'] : [])
+            ->filter(fn (array $service): bool => $this->serviceIsIncluded($service))
+            ->pluck('code')
+            ->all();
+
+        $requestedCodes = collect($serviceSpecs)
+            ->pluck('service_code')
+            ->filter(fn (mixed $serviceCode): bool => is_string($serviceCode))
+            ->all();
+
+        return count(array_diff($requestedCodes, $codes));
     }
 
     /**

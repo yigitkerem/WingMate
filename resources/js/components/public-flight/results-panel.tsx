@@ -17,6 +17,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { fareRuleLabel } from '@/lib/flight-search';
+import { useTranslation } from '@/lib/i18n';
 import type { Fare, FlightResult, SearchResults } from '@/types/flight-search';
 
 export type RoundTripStep = 'outbound' | 'return';
@@ -51,6 +52,7 @@ export function ResultsPanel({
     roundTripSelection = {},
     onRoundTripStepChange,
 }: ResultsPanelProps) {
+    const { t } = useTranslation();
     const [openFareCategory, setOpenFareCategory] =
         useState<OpenFareCategory>(null);
 
@@ -87,7 +89,7 @@ export function ResultsPanel({
                     <FlightLeg
                         key={roundTripStep}
                         flights={activeFlights}
-                        emptyMessage={`No sellable ${roundTripStep} flights found for this route and date.`}
+                        emptyMessage={t('results.noStepFlights')}
                         openFareCategory={openFareCategory}
                         onToggleFareCategory={toggleFareCategory}
                         onPurchase={onPurchase}
@@ -97,7 +99,7 @@ export function ResultsPanel({
                 <div className="grid gap-4">
                     <FlightLeg
                         flights={results.outbound}
-                        emptyMessage="No sellable flights found for this route and date."
+                        emptyMessage={t('results.noFlights')}
                         openFareCategory={openFareCategory}
                         onToggleFareCategory={toggleFareCategory}
                         onPurchase={onPurchase}
@@ -105,7 +107,7 @@ export function ResultsPanel({
                     {results.return.length > 0 && (
                         <FlightLeg
                             flights={results.return}
-                            emptyMessage="No sellable return flights found for this route and date."
+                            emptyMessage={t('results.noReturnFlights')}
                             openFareCategory={openFareCategory}
                             onToggleFareCategory={toggleFareCategory}
                             onPurchase={onPurchase}
@@ -129,18 +131,20 @@ function RoundTripSteps({
     };
     onStepChange?: (step: RoundTripStep) => void;
 }) {
+    const { t } = useTranslation();
+
     return (
         <div className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 shadow-sm transition-all duration-500 md:grid-cols-2 starting:opacity-0 motion-safe:starting:translate-y-2">
             <RoundTripStepButton
                 step="outbound"
-                title="Outbound"
+                title={t('results.outbound')}
                 isActive={activeStep === 'outbound'}
                 selection={selection.outbound}
                 onStepChange={onStepChange}
             />
             <RoundTripStepButton
                 step="return"
-                title="Return"
+                title={t('results.return')}
                 isActive={activeStep === 'return'}
                 isDisabled={!selection.outbound}
                 selection={selection.return}
@@ -165,6 +169,8 @@ function RoundTripStepButton({
     selection?: RoundTripFareSelection;
     onStepChange?: (step: RoundTripStep) => void;
 }) {
+    const { t } = useTranslation();
+
     return (
         <button
             type="button"
@@ -182,7 +188,7 @@ function RoundTripStepButton({
                         isActive ? 'text-slate-300' : 'text-slate-500'
                     }`}
                 >
-                    Step {step === 'outbound' ? '1' : '2'}
+                    {t('results.step')} {step === 'outbound' ? '1' : '2'}
                 </span>
                 <span className="mt-1 block text-lg leading-6 font-semibold">
                     {title}
@@ -195,8 +201,8 @@ function RoundTripStepButton({
                     {selection
                         ? selectedFareSummary(selection)
                         : isDisabled
-                          ? 'Choose outbound first'
-                          : 'Select flight and fare'}
+                          ? t('results.chooseOutboundFirst')
+                          : t('results.selectFlightFare')}
                 </span>
             </span>
             <span
@@ -399,8 +405,9 @@ function FareAction({
     isOpen: boolean;
     onOpen: () => void;
 }) {
+    const { locale, t } = useTranslation();
     const isBusiness = cabin === 'business';
-    const label = isBusiness ? 'Business' : 'Economy';
+    const label = isBusiness ? t('results.business') : t('results.economy');
     const startingFare = preferredFare(fares);
     const hasFares = fares.length > 0;
     const price = startingFare ? `$${startingFare.base_price_usd}` : '-';
@@ -423,7 +430,7 @@ function FareAction({
                         isOpen ? 'text-slate-300' : 'text-slate-500'
                     }`}
                 >
-                    {label} from {price}
+                    {fareStartingLabel(label, price, locale, t)}
                 </span>
                 {isBusiness && (
                     <BriefcaseBusiness
@@ -445,15 +452,30 @@ function FareAction({
             >
                 {hasFares ? (
                     <>
-                        View packages
+                        {t('results.viewPackages')}
                         <ArrowRight className="size-4" />
                     </>
                 ) : (
-                    <span>No {label.toLowerCase()} fare returned</span>
+                    <span>
+                        {label} {t('results.noFareReturned').toLowerCase()}
+                    </span>
                 )}
             </div>
         </button>
     );
+}
+
+function fareStartingLabel(
+    label: string,
+    price: string,
+    locale: 'en' | 'tr',
+    t: (key: 'results.from') => string,
+): string {
+    if (locale === 'tr') {
+        return `${label} başlangıç fiyatı: ${price}`;
+    }
+
+    return `${label} ${t('results.from')} ${price}`;
 }
 
 function faresForFlight(flight: FlightResult): Fare[] {
@@ -514,33 +536,37 @@ function PackageTable({
     isOpen: boolean;
     onPurchase: (flight: FlightResult, fare: Fare) => void;
 }) {
-    const label = cabin === 'business' ? 'Business' : 'Economy';
+    const { t } = useTranslation();
+    const label =
+        cabin === 'business' ? t('results.business') : t('results.economy');
     const comparisonRows: ComparisonRowDefinition[] = [
         {
-            label: 'Cabin bag',
-            helper: 'Carry-on allowance',
+            label: t('results.cabinBag'),
+            helper: t('results.cabinBagHelper'),
             icon: <Briefcase className="size-4" />,
             render: (fare) => `${fare.cabin_baggage_kg ?? 0} kg`,
         },
         {
-            label: 'Checked bag',
-            helper: 'Checked baggage allowance included with the fare.',
+            label: t('results.checkedBag'),
+            helper: t('results.checkedBagHelper'),
             icon: <Luggage className="size-4" />,
             render: (fare) =>
                 (fare.checked_baggage_kg ?? 0) > 0
                     ? `${fare.checked_baggage_kg} kg`
-                    : 'Not included',
+                    : t('results.notIncluded'),
         },
         {
-            label: 'Seat selection',
-            helper: 'Seat assignment policy',
+            label: t('results.seatSelection'),
+            helper: t('results.seatSelectionHelper'),
             icon: <CheckCircle2 className="size-4" />,
             render: (fare) =>
-                fare.seat_selection_free ? 'Complimentary' : 'Paid',
+                fare.seat_selection_free
+                    ? t('results.complimentary')
+                    : t('results.paid'),
         },
         {
-            label: 'Change',
-            helper: 'Change allowance',
+            label: t('results.change'),
+            helper: t('results.changeHelper'),
             icon: <RotateCcw className="size-4" />,
             render: (fare) =>
                 fareRuleLabel(
@@ -551,8 +577,8 @@ function PackageTable({
                 ),
         },
         {
-            label: 'Refund',
-            helper: 'Refund allowance',
+            label: t('results.refund'),
+            helper: t('results.refundHelper'),
             icon: <Star className="size-4" />,
             render: (fare) =>
                 fareRuleLabel(
@@ -594,12 +620,14 @@ function PackageTable({
                             <tr className="border-b border-slate-200 bg-slate-50">
                                 <th className="px-4 py-4 align-bottom">
                                     <span className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-                                        Compare
+                                        {t('results.compare')}
                                     </span>
                                 </th>
                                 {fares.map((fare, index) => {
-                                    const lowInventory =
-                                        lowInventoryLabel(fare);
+                                    const lowInventory = lowInventoryLabel(
+                                        fare,
+                                        t('results.leftAtPrice'),
+                                    );
 
                                     return (
                                         <th
@@ -613,7 +641,7 @@ function PackageTable({
                                             )}
                                             <span className="block text-base font-semibold text-slate-950">
                                                 {fare.class ??
-                                                    `${label} package`}
+                                                    `${label} ${t('results.package')}`}
                                             </span>
                                             <span className="mt-1 block text-xs font-semibold text-slate-500">
                                                 {[
@@ -622,7 +650,7 @@ function PackageTable({
                                                 ]
                                                     .filter(Boolean)
                                                     .join(' / ') ||
-                                                    'Fare package'}
+                                                    t('results.farePackage')}
                                             </span>
                                             <span className="mt-3 block text-2xl leading-none font-semibold text-slate-950">
                                                 {formatFarePrice(fare)}
@@ -644,7 +672,7 @@ function PackageTable({
                         <tfoot>
                             <tr className="border-t border-slate-200 bg-white">
                                 <td className="px-4 py-4 text-xs font-medium tracking-wide text-slate-500 uppercase">
-                                    Choose package
+                                    {t('results.choosePackage')}
                                 </td>
                                 {fares.map((fare, index) => (
                                     <td
@@ -659,7 +687,7 @@ function PackageTable({
                                                 onPurchase(flight, fare)
                                             }
                                         >
-                                            Select
+                                            {t('results.select')}
                                         </button>
                                     </td>
                                 ))}
@@ -730,7 +758,7 @@ function formatFarePrice(fare: Fare): string {
         : '-';
 }
 
-function lowInventoryLabel(fare: Fare): string | null {
+function lowInventoryLabel(fare: Fare, suffix: string): string | null {
     if (
         typeof fare.count_available !== 'number' ||
         fare.count_available < 1 ||
@@ -739,5 +767,5 @@ function lowInventoryLabel(fare: Fare): string | null {
         return null;
     }
 
-    return `${fare.count_available} left at this price`;
+    return `${fare.count_available} ${suffix}`;
 }

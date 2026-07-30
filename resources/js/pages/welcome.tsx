@@ -24,10 +24,10 @@ export default function Welcome() {
                                 alt="Turkish Airlines logo"
                             />
                             <span className="leading-none">
-                                <span className="block text-[22px] font-black tracking-normal">
+                                <span className="block font-display text-[22px] font-black tracking-normal">
                                     TURKISH AIRLINES
                                 </span>
-                                <span className="mt-1 block text-[11px] font-bold tracking-[0.25em] text-white/70">
+                                <span className="mt-1 block font-condensed text-[11px] font-bold tracking-[0.25em] text-white/70">
                                     WIDEN YOUR WORLD
                                 </span>
                             </span>
@@ -63,10 +63,10 @@ export default function Welcome() {
 
                     <section className="flex flex-1 items-center py-16">
                         <div className="max-w-3xl">
-                            <p className="text-sm font-black tracking-[0.22em] text-red-200 uppercase">
+                            <p className="font-condensed text-sm font-black tracking-[0.22em] text-red-200 uppercase">
                                 Dynamic Pricer
                             </p>
-                            <h1 className="mt-5 text-5xl leading-tight font-black tracking-normal md:text-7xl">
+                            <h1 className="mt-5 font-display text-5xl leading-tight font-black tracking-normal md:text-7xl">
                                 Widen Your World
                             </h1>
                             <p className="mt-6 max-w-xl text-base leading-7 font-medium text-white/85">

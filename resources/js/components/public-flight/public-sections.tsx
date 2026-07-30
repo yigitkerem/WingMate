@@ -6,6 +6,7 @@ import {
     TrendingDown,
 } from 'lucide-react';
 import { featuredRoutes } from '@/lib/flight-search';
+import { useTranslation } from '@/lib/i18n';
 
 type PublicSectionsProps = {
     onQuickSearch: (
@@ -16,6 +17,8 @@ type PublicSectionsProps = {
 };
 
 export function PopularRoutes({ onQuickSearch }: PublicSectionsProps) {
+    const { locale, t } = useTranslation();
+
     return (
         <section
             id="featured-fares"
@@ -23,15 +26,14 @@ export function PopularRoutes({ onQuickSearch }: PublicSectionsProps) {
         >
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
                 <div>
-                    <span className="mb-1 block text-[11px] font-extrabold tracking-wider text-red-700 uppercase">
-                        Featured fares
+                    <span className="mb-1 block font-condensed text-[11px] font-extrabold tracking-wider text-red-700 uppercase">
+                        {t('routes.featuredFares')}
                     </span>
-                    <h2 className="text-xl font-black tracking-normal text-slate-900 md:text-2xl">
-                        Popular routes this week
+                    <h2 className="font-display text-xl font-black tracking-normal text-slate-900 md:text-2xl">
+                        {t('routes.popularThisWeek')}
                     </h2>
                     <p className="mt-1 text-xs font-medium text-slate-500 md:text-sm">
-                        Direct Turkish Airlines fares with seasonal
-                        availability.
+                        {t('routes.availability')}
                     </p>
                 </div>
                 <button
@@ -39,7 +41,7 @@ export function PopularRoutes({ onQuickSearch }: PublicSectionsProps) {
                     className="inline-flex items-center gap-2 rounded-md border border-slate-900 px-4 py-2 text-xs font-bold text-slate-900 transition-colors hover:bg-slate-900 hover:text-white"
                     onClick={() => onQuickSearch('IST', 'LHR', '2026-08-06')}
                 >
-                    View all routes
+                    {t('routes.viewAll')}
                     <ArrowRight className="size-3.5" />
                 </button>
             </div>
@@ -65,24 +67,27 @@ export function PopularRoutes({ onQuickSearch }: PublicSectionsProps) {
                         />
                         <div className="absolute inset-0 bg-linear-to-t from-slate-950/90 via-slate-950/40 to-transparent" />
                         <div className="absolute top-3 left-3 flex w-[calc(100%-24px)] items-center justify-between gap-3">
-                            <span className="rounded-md border border-white/20 bg-black/65 px-2.5 py-1 text-xs font-black tracking-wider text-white">
+                            <span className="rounded-md border border-white/20 bg-black/65 px-2.5 py-1 font-condensed text-xs font-black tracking-wider text-white">
                                 {route.origin} - {route.destination}
                             </span>
                             <span className="rounded-md bg-black/50 px-2.5 py-1 text-xs font-bold text-white">
-                                From {route.price}
+                                {t('routes.from')} {route.price}
                             </span>
                         </div>
                         <div className="absolute right-3 bottom-3 left-3 text-white">
                             <p className="text-[11px] font-medium text-slate-300">
-                                Travel from{' '}
+                                {t('routes.travelFrom')}{' '}
                                 {new Date(
                                     `${route.date}T00:00:00`,
-                                ).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                })}
+                                ).toLocaleDateString(
+                                    locale === 'tr' ? 'tr-TR' : 'en-US',
+                                    {
+                                        month: 'short',
+                                        day: 'numeric',
+                                    },
+                                )}
                             </p>
-                            <h3 className="mt-0.5 text-base font-extrabold tracking-normal transition-colors group-hover:text-red-300">
+                            <h3 className="mt-0.5 font-display text-base font-extrabold tracking-normal transition-colors group-hover:text-red-300">
                                 {route.route}
                             </h3>
                         </div>
@@ -94,29 +99,26 @@ export function PopularRoutes({ onQuickSearch }: PublicSectionsProps) {
 }
 
 export function FeatureGrid() {
+    const { t } = useTranslation();
     const features = [
         {
-            title: 'Dynamic pricing',
-            description:
-                'Departure timing, availability, and fare family rules are reflected in each search.',
+            title: t('features.dynamicPricing'),
+            description: t('features.dynamicPricingDesc'),
             icon: TrendingDown,
         },
         {
-            title: 'Round-trip advantage',
-            description:
-                'Round-trip searches can surface fare families that are not available as separate one-way tickets.',
+            title: t('features.roundTrip'),
+            description: t('features.roundTripDesc'),
             icon: RefreshCcw,
         },
         {
-            title: 'AI-ready packaging',
-            description:
-                'Wingo can build personalized bundles from available fares and selectable ancillary products.',
+            title: t('features.aiPackaging'),
+            description: t('features.aiPackagingDesc'),
             icon: Layers,
         },
         {
-            title: 'Travel assistant',
-            description:
-                'Ask natural-language questions in the side panel and get grounded answers from flight and policy tools.',
+            title: t('features.assistant'),
+            description: t('features.assistantDesc'),
             icon: MessageCircle,
         },
     ];
@@ -134,7 +136,7 @@ export function FeatureGrid() {
                         <div className="mb-4 flex size-11 items-center justify-center rounded-md bg-red-50 text-red-800">
                             <Icon className="size-5" />
                         </div>
-                        <h3 className="mb-1.5 text-[15px] font-bold text-slate-900">
+                        <h3 className="mb-1.5 font-display text-[15px] font-bold text-slate-900">
                             {feature.title}
                         </h3>
                         <p className="text-[13px] leading-relaxed font-medium text-slate-500">
@@ -148,14 +150,13 @@ export function FeatureGrid() {
 }
 
 export function PublicFooter() {
+    const { t } = useTranslation();
+
     return (
         <footer className="mt-16 bg-[#1B1E24] text-[11px] font-medium text-white/60">
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-6">
-                <span>
-                    © Dynamic Pricer demo. Turkish Airlines-inspired public
-                    interface.
-                </span>
-                <span>Privacy Policy · Terms of Use · Contact</span>
+                <span>© {t('footer.demo')}</span>
+                <span>{t('footer.links')}</span>
             </div>
         </footer>
     );

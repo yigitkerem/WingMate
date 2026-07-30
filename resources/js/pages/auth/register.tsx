@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { useTranslation } from '@/lib/i18n';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
 
@@ -15,9 +16,11 @@ type Props = {
 };
 
 export default function Register({ passwordRules }: Props) {
+    const { t } = useTranslation();
+
     return (
         <>
-            <Head title="Register" />
+            <Head title={t('auth.register')} />
             <Form
                 {...store.form()}
                 resetOnSuccess={['password', 'password_confirmation']}
@@ -32,7 +35,7 @@ export default function Register({ passwordRules }: Props) {
                                     htmlFor="name"
                                     className="font-bold text-slate-700"
                                 >
-                                    Name
+                                    {t('auth.name')}
                                 </Label>
                                 <Input
                                     id="name"
@@ -42,7 +45,7 @@ export default function Register({ passwordRules }: Props) {
                                     tabIndex={1}
                                     autoComplete="name"
                                     name="name"
-                                    placeholder="Full name"
+                                    placeholder={t('auth.fullName')}
                                     className="h-11 border-slate-200 bg-slate-50 text-slate-950 focus-visible:border-red-800 focus-visible:ring-red-800/15"
                                 />
                                 <InputError
@@ -56,7 +59,7 @@ export default function Register({ passwordRules }: Props) {
                                     htmlFor="email"
                                     className="font-bold text-slate-700"
                                 >
-                                    Email address
+                                    {t('auth.email')}
                                 </Label>
                                 <Input
                                     id="email"
@@ -76,7 +79,7 @@ export default function Register({ passwordRules }: Props) {
                                     htmlFor="password"
                                     className="font-bold text-slate-700"
                                 >
-                                    Password
+                                    {t('auth.password')}
                                 </Label>
                                 <PasswordInput
                                     id="password"
@@ -84,7 +87,7 @@ export default function Register({ passwordRules }: Props) {
                                     tabIndex={3}
                                     autoComplete="new-password"
                                     name="password"
-                                    placeholder="Password"
+                                    placeholder={t('auth.password')}
                                     passwordrules={passwordRules}
                                     className="h-11 border-slate-200 bg-slate-50 text-slate-950 focus-visible:border-red-800 focus-visible:ring-red-800/15"
                                 />
@@ -96,7 +99,7 @@ export default function Register({ passwordRules }: Props) {
                                     htmlFor="password_confirmation"
                                     className="font-bold text-slate-700"
                                 >
-                                    Confirm password
+                                    {t('auth.confirmPassword')}
                                 </Label>
                                 <PasswordInput
                                     id="password_confirmation"
@@ -104,7 +107,7 @@ export default function Register({ passwordRules }: Props) {
                                     tabIndex={4}
                                     autoComplete="new-password"
                                     name="password_confirmation"
-                                    placeholder="Confirm password"
+                                    placeholder={t('auth.confirmPassword')}
                                     passwordrules={passwordRules}
                                     className="h-11 border-slate-200 bg-slate-50 text-slate-950 focus-visible:border-red-800 focus-visible:ring-red-800/15"
                                 />
@@ -121,18 +124,18 @@ export default function Register({ passwordRules }: Props) {
                             >
                                 {processing && <Spinner />}
                                 {!processing && <UserPlus className="size-4" />}
-                                Create account
+                                {t('auth.createAccount')}
                             </Button>
                         </div>
 
                         <div className="text-center text-sm font-medium text-slate-500">
-                            Already have an account?{' '}
+                            {t('auth.haveAccount')}{' '}
                             <TextLink
                                 href={login()}
                                 tabIndex={6}
                                 className="font-bold text-red-800 decoration-red-200 hover:text-red-950"
                             >
-                                Log in
+                                {t('public.login')}
                             </TextLink>
                         </div>
                     </>

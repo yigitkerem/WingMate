@@ -1,4 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
+import { LanguageSwitcher } from '@/components/language-switcher';
+import { useTranslation } from '@/lib/i18n';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
 
@@ -7,7 +9,10 @@ export default function AuthSimpleLayout({
     title,
     description,
 }: AuthLayoutProps) {
+    const { t } = useTranslation();
     const { name } = usePage().props;
+    const displayTitle = translateAuthLayoutText(title, t);
+    const displayDescription = translateAuthLayoutText(description, t);
 
     return (
         <main className="grid min-h-svh bg-slate-50 text-slate-950 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,.95fr)]">
@@ -25,31 +30,30 @@ export default function AuthSimpleLayout({
                             alt="Turkish Airlines logo"
                         />
                         <span className="leading-none">
-                            <span className="block text-[22px] font-black tracking-normal">
+                            <span className="block font-display text-[22px] font-black tracking-normal">
                                 TURKISH AIRLINES
                             </span>
-                            <span className="mt-1 block text-[11px] font-bold tracking-[0.25em] text-white/70">
+                            <span className="mt-1 block font-condensed text-[11px] font-bold tracking-[0.25em] text-white/70">
                                 WIDEN YOUR WORLD
                             </span>
                         </span>
                     </Link>
 
                     <div className="max-w-xl pb-10">
-                        <p className="text-sm font-bold tracking-[0.22em] text-red-200 uppercase">
+                        <p className="font-condensed text-sm font-bold tracking-[0.22em] text-red-200 uppercase">
                             {name}
                         </p>
-                        <h2 className="mt-5 text-5xl leading-tight font-black tracking-normal">
-                            Smart fares, clearer trips.
+                        <h2 className="mt-5 font-display text-5xl leading-tight font-black tracking-normal">
+                            {t('auth.hero')}
                         </h2>
                         <p className="mt-5 max-w-md text-base leading-7 font-medium text-white/85">
-                            Search flights, compare bundled fares, and keep
-                            every confirmed journey in one passenger area.
+                            {t('auth.heroCopy')}
                         </p>
                         <div className="mt-8 grid max-w-md grid-cols-3 gap-3 text-sm font-bold">
                             {[
-                                '300+ destinations',
-                                'Live fare rules',
-                                'Wingo help',
+                                t('auth.destinations'),
+                                t('auth.liveRules'),
+                                t('auth.wingoHelp'),
                             ].map((item) => (
                                 <span
                                     key={item}
@@ -65,6 +69,9 @@ export default function AuthSimpleLayout({
 
             <section className="flex min-h-svh items-center justify-center px-5 py-8 sm:px-8">
                 <div className="w-full max-w-[420px] rounded-md border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                    <div className="mb-4 flex justify-end">
+                        <LanguageSwitcher />
+                    </div>
                     <Link
                         href={home()}
                         className="mb-8 flex items-center gap-3 lg:hidden"
@@ -75,24 +82,24 @@ export default function AuthSimpleLayout({
                             alt="Turkish Airlines logo"
                         />
                         <span className="leading-none">
-                            <span className="block text-lg font-black tracking-normal">
+                            <span className="block font-display text-lg font-black tracking-normal">
                                 TURKISH AIRLINES
                             </span>
-                            <span className="mt-1 block text-[10px] font-bold tracking-[0.2em] text-slate-500">
+                            <span className="mt-1 block font-condensed text-[10px] font-bold tracking-[0.2em] text-slate-500">
                                 WIDEN YOUR WORLD
                             </span>
                         </span>
                     </Link>
 
                     <div className="mb-7 space-y-2">
-                        <p className="text-xs font-black tracking-[0.2em] text-red-800 uppercase">
-                            Passenger area
+                        <p className="font-condensed text-xs font-black tracking-[0.2em] text-red-800 uppercase">
+                            {t('dashboard.area')}
                         </p>
-                        <h1 className="text-3xl font-black tracking-normal text-slate-950">
-                            {title}
+                        <h1 className="font-display text-3xl font-black tracking-normal text-slate-950">
+                            {displayTitle}
                         </h1>
                         <p className="text-sm leading-6 font-medium text-slate-500">
-                            {description}
+                            {displayDescription}
                         </p>
                     </div>
 
@@ -101,4 +108,28 @@ export default function AuthSimpleLayout({
             </section>
         </main>
     );
+}
+
+function translateAuthLayoutText(
+    value: string | undefined,
+    t: (
+        key:
+            | 'auth.welcomeBack'
+            | 'auth.loginDescription'
+            | 'auth.joinJourney'
+            | 'auth.registerDescription',
+    ) => string,
+): string | undefined {
+    switch (value) {
+        case 'Welcome back':
+            return t('auth.welcomeBack');
+        case 'Log in to review tickets, fare bundles, and saved trips.':
+            return t('auth.loginDescription');
+        case 'Join the journey':
+            return t('auth.joinJourney');
+        case 'Create a passenger profile for tickets and trip history.':
+            return t('auth.registerDescription');
+        default:
+            return value;
+    }
 }

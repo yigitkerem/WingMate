@@ -14,6 +14,7 @@ import {
     passengerLimit,
     totalPassengers,
 } from '@/lib/flight-search';
+import { useTranslation } from '@/lib/i18n';
 import type {
     Airport,
     SearchFilters,
@@ -50,6 +51,7 @@ export function SearchCard({
     hasResults,
     variant = 'home',
 }: SearchCardProps) {
+    const { t } = useTranslation();
     const [openPanel, setOpenPanel] = useState<string | null>(null);
     const isCompact = variant === 'compact';
 
@@ -86,8 +88,8 @@ export function SearchCard({
                         >
                             <AirportField
                                 airports={airports}
-                                label="From"
-                                placeholder="Choose departure"
+                                label={t('search.from')}
+                                placeholder={t('search.chooseDeparture')}
                                 value={filters.origin_airport_id}
                                 error={errors.origin_airport_id}
                                 compact={isCompact}
@@ -109,7 +111,7 @@ export function SearchCard({
                                 <button
                                     type="button"
                                     className="pointer-events-auto flex size-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:border-red-100 hover:bg-red-50 hover:text-red-800"
-                                    aria-label="Swap departure and arrival airports"
+                                    aria-label={t('search.swapAirports')}
                                     onClick={swapAirports}
                                 >
                                     <ArrowLeftRight className="size-4" />
@@ -118,8 +120,8 @@ export function SearchCard({
 
                             <AirportField
                                 airports={airports}
-                                label="To"
-                                placeholder="Choose destination"
+                                label={t('search.to')}
+                                placeholder={t('search.chooseDestination')}
                                 value={filters.destination_airport_id}
                                 error={errors.destination_airport_id}
                                 compact={isCompact}
@@ -167,7 +169,7 @@ export function SearchCard({
                                 type="submit"
                             >
                                 <Search className="size-4" />
-                                Search
+                                {t('search.submit')}
                             </button>
                         </div>
 
@@ -184,7 +186,7 @@ export function SearchCard({
                                         )
                                     }
                                 >
-                                    Reset sample route
+                                    {t('search.resetSample')}
                                 </button>
                             </div>
                         )}
@@ -196,19 +198,25 @@ export function SearchCard({
 }
 
 function ServiceTabs() {
+    const { t } = useTranslation();
+
     return (
         <div id="services" className="border-b border-slate-100">
             <div className="flex overflow-x-auto text-[13px] font-bold text-slate-500">
                 <span className="inline-flex shrink-0 items-center gap-2 px-5 py-3.5 text-red-800 [box-shadow:inset_0_-3px_0_#991b1b]">
                     <Search className="size-4" />
-                    Flight search
+                    {t('search.flightSearch')}
                 </span>
-                {['Check-in', 'Manage booking', 'Flight status'].map((item) => (
+                {[
+                    t('search.checkIn'),
+                    t('search.manageBooking'),
+                    t('public.flightStatus'),
+                ].map((item) => (
                     <button
                         key={item}
                         type="button"
                         className="inline-flex shrink-0 items-center gap-2 px-5 py-3.5 transition-colors hover:text-red-800"
-                        title="Coming soon"
+                        title={t('search.comingSoon')}
                     >
                         {item}
                     </button>
@@ -241,6 +249,7 @@ function AirportField({
     onClose: () => void;
     onChange: (id: number) => void;
 }) {
+    const { t } = useTranslation();
     const [query, setQuery] = useState('');
     const selected = airports.find((airport) => airport.id === value);
     const filtered = useMemo(
@@ -280,7 +289,7 @@ function AirportField({
                     <input
                         autoFocus
                         className="h-11 w-full border-b border-slate-200 px-3 text-sm font-semibold outline-none focus:border-red-800"
-                        placeholder="Search airport or code"
+                        placeholder={t('search.airportPlaceholder')}
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                     />
@@ -328,6 +337,7 @@ function DateField({
         value: SearchFilters[K],
     ) => void;
 }) {
+    const { locale, t } = useTranslation();
     const isRoundTrip = filters.trip_type === 'round_trip';
     const rootRef = useRef<HTMLDivElement>(null);
     const [isOpen, setIsOpen] = useState(false);
@@ -449,7 +459,7 @@ function DateField({
             >
                 <span className="flex min-w-0 flex-col justify-center gap-1 px-3">
                     <span className="text-[10px] leading-none font-semibold text-slate-500 uppercase">
-                        Depart
+                        {t('search.depart')}
                     </span>
                     <span className="flex min-h-[18px] items-center gap-1">
                         <CalendarDays className="size-4 text-slate-400" />
@@ -460,7 +470,7 @@ function DateField({
                         </span>
                         <span className="text-[14px] leading-none font-bold text-slate-800">
                             {departDate
-                                ? monthNames[departDate.getMonth()]
+                                ? monthNamesFor(locale)[departDate.getMonth()]
                                 : ''}
                         </span>
                     </span>
@@ -469,7 +479,7 @@ function DateField({
                 {isRoundTrip && (
                     <span className="flex min-w-0 flex-col justify-center gap-1 border-l border-slate-200 px-3">
                         <span className="text-[10px] leading-none font-semibold text-slate-500 uppercase">
-                            Return
+                            {t('search.return')}
                         </span>
                         <span className="flex min-h-[18px] items-center gap-1">
                             <span className="text-[14px] leading-none font-bold text-slate-800">
@@ -478,11 +488,13 @@ function DateField({
                                           2,
                                           '0',
                                       )
-                                    : 'Select'}
+                                    : t('search.select')}
                             </span>
                             <span className="text-[14px] leading-none font-bold text-slate-800">
                                 {returnDate
-                                    ? monthNames[returnDate.getMonth()]
+                                    ? monthNamesFor(locale)[
+                                          returnDate.getMonth()
+                                      ]
                                     : ''}
                             </span>
                         </span>
@@ -498,11 +510,11 @@ function DateField({
                     <div
                         className="mb-2.5 grid grid-cols-2 gap-2"
                         role="radiogroup"
-                        aria-label="Trip type"
+                        aria-label={t('search.tripType')}
                     >
                         {[
-                            ['one_way', 'One-way'],
-                            ['round_trip', 'Roundtrip'],
+                            ['one_way', t('search.oneWay')],
+                            ['round_trip', t('search.roundTrip')],
                         ].map(([value, label]) => (
                             <button
                                 type="button"
@@ -538,7 +550,7 @@ function DateField({
                             ‹
                         </button>
                         <div className="text-sm font-bold text-slate-800">
-                            {monthNames[calendarCursor.getMonth()]}{' '}
+                            {monthNamesFor(locale)[calendarCursor.getMonth()]}{' '}
                             {calendarCursor.getFullYear()}
                         </div>
                         <button
@@ -558,7 +570,7 @@ function DateField({
                         className="grid grid-cols-7 gap-0.5 text-center text-sm"
                         onMouseLeave={() => setHoverDate(null)}
                     >
-                        {weekdayNames.map((weekday) => (
+                        {weekdayNamesFor(locale).map((weekday) => (
                             <div
                                 key={weekday}
                                 className="py-1 text-[11px] font-bold text-slate-400"
@@ -603,9 +615,9 @@ function DateField({
                     <div className="mt-2 text-[11px] font-medium text-slate-400">
                         {isRoundTrip
                             ? pickingReturn
-                                ? 'Choose return date'
-                                : 'Choose departure date'
-                            : 'Choose departure date'}
+                                ? t('search.chooseReturnDate')
+                                : t('search.chooseDepartDate')
+                            : t('search.chooseDepartDate')}
                     </div>
                 </div>
             )}
@@ -639,6 +651,7 @@ function PassengerField({
         value: SearchFilters[K],
     ) => void;
 }) {
+    const { t } = useTranslation();
     const total = totalPassengers(
         filters.adults,
         filters.children,
@@ -673,18 +686,21 @@ function PassengerField({
                 onClick={onToggle}
             >
                 <span className="text-[10px] leading-none font-semibold text-slate-500 uppercase">
-                    Passengers
+                    {t('search.passengers')}
                 </span>
                 <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
                     <Users className="size-4 text-slate-400" />
-                    {total} {total === 1 ? 'Passenger' : 'Passengers'}
+                    {total}{' '}
+                    {total === 1
+                        ? t('search.passenger')
+                        : t('search.passengers')}
                 </span>
             </button>
 
             {isOpen && (
                 <div className="absolute top-full right-0 z-[140] mt-1 w-[min(320px,calc(100vw-48px))] space-y-3 rounded-md border border-slate-200 bg-white p-4">
                     <PassengerRow
-                        label="Adult"
+                        label={t('search.adult')}
                         helper="12+"
                         value={filters.adults}
                         min={1}
@@ -692,7 +708,7 @@ function PassengerField({
                         onChange={(value) => setPassenger('adults', value)}
                     />
                     <PassengerRow
-                        label="Child"
+                        label={t('search.child')}
                         helper="2-11"
                         value={filters.children}
                         min={0}
@@ -700,7 +716,7 @@ function PassengerField({
                         onChange={(value) => setPassenger('children', value)}
                     />
                     <PassengerRow
-                        label="Baby"
+                        label={t('search.baby')}
                         helper="0-2"
                         value={filters.babies}
                         min={0}
@@ -710,12 +726,12 @@ function PassengerField({
                     {canUseFullSearch && (
                         <div className="border-t border-slate-100 pt-3">
                             <div className="mb-1 text-[10px] font-semibold text-slate-500 uppercase">
-                                Fare view
+                                {t('search.fareView')}
                             </div>
                             <div className="grid grid-cols-2 gap-1 rounded-md border border-slate-200 bg-slate-50 p-1">
                                 {[
-                                    ['basic', 'Best'],
-                                    ['full', 'All fares'],
+                                    ['basic', t('search.best')],
+                                    ['full', t('search.allFares')],
                                 ].map(([value, label]) => (
                                     <button
                                         type="button"
@@ -812,6 +828,31 @@ const monthNames = [
 ];
 
 const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const turkishMonthNames = [
+    'Oca',
+    'Şub',
+    'Mar',
+    'Nis',
+    'May',
+    'Haz',
+    'Tem',
+    'Ağu',
+    'Eyl',
+    'Eki',
+    'Kas',
+    'Ara',
+];
+
+const turkishWeekdayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+
+function monthNamesFor(locale: 'en' | 'tr'): string[] {
+    return locale === 'tr' ? turkishMonthNames : monthNames;
+}
+
+function weekdayNamesFor(locale: 'en' | 'tr'): string[] {
+    return locale === 'tr' ? turkishWeekdayNames : weekdayNames;
+}
 
 function parseIsoDate(value: string): Date | null {
     if (!value) {

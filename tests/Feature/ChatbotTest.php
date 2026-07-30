@@ -26,7 +26,11 @@ test('chat endpoint queues a chatbot message', function () {
         ->assertAccepted()
         ->assertJson(['status' => 'queued', 'message_id' => 'assistant-1']);
 
-    Queue::assertPushed(ProcessChatMessage::class, fn (ProcessChatMessage $job): bool => $job->sessionId === 'session-1');
+    Queue::assertPushed(
+        ProcessChatMessage::class,
+        fn (ProcessChatMessage $job): bool => $job->sessionId === 'session-1'
+            && $job->language === 'en',
+    );
 });
 
 test('chat message status returns the queued reply when it is ready', function () {
@@ -88,6 +92,196 @@ test('agent handles structured bundle requests without the external chat service
         ->and($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles');
 });
 
+test('agent asks guided follow up questions before recommending flights', function () {
+    config()->set('services.azure_openai.base_url', null);
+    config()->set('services.azure_openai.api_key', null);
+
+    $response = app(ChatbotAgent::class)->send(
+        'guided-flight-session',
+        'Can you recommend a flight from Istanbul to London?',
+        'ours',
+        'en',
+    );
+
+    expect($response['reply'])->toContain('Before I suggest flights')
+        ->and($response['tool_trace'][0]['tool'])->toBe('guided_choices')
+        ->and($response['tool_trace'][0]['result']['choices'])->toHaveCount(3)
+        ->and(collect($response['tool_trace'][0]['result']['choices'])->pluck('label')->all())->toContain('Lowest price');
+});
+
+test('agent lets a requested city override attached search prefill destination', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        config()->set('services.azure_openai.base_url', null);
+        config()->set('services.azure_openai.api_key', null);
+
+        $response = app(ChatbotAgent::class)->send(
+            'prefill-destination-override-session',
+            'Cheapest fares to London
+
+Current search form: from IST to AMS on 2026-07-30. Passengers: adults 1, children 0, babies 0. Use this prefill only for flight search, fare recommendation, bundle building, checkout, or purchase questions. Ignore the prefill for policy, passenger rights, cancellation, compensation, refund-rule, baggage-rule, or other knowledge-base questions.',
+            'ours',
+            'en',
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    expect($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles')
+        ->and($response['tool_trace'][0]['result']['flight']['origin'])->toBe('IST')
+        ->and($response['tool_trace'][0]['result']['flight']['destination'])->toBe('LHR')
+        ->and($response['tool_trace'][0]['result']['flight']['date'])->toBe('2026-07-30');
+});
+
+test('agent offer narration and highlights only claim services included by the fare', function () {
+    $agent = app(ChatbotAgent::class);
+    $result = [
+        'flight' => ['origin' => 'IST', 'destination' => 'AMS'],
+        'recommended_picks' => [[
+            'checked_baggage_kg' => 0,
+            'cabin_baggage_kg' => 8,
+            'seat_selection_free' => false,
+            'latest_change_hours' => null,
+            'latest_refund_hours' => null,
+            'services' => [],
+        ]],
+    ];
+    $request = [
+        'origin' => 'IST',
+        'destination' => 'AMS',
+        'date' => '2026-07-30',
+        'service_codes' => ['CHECKED_BAG', 'REFUNDABLE'],
+        'excluded_service_codes' => [],
+        'service_specs' => [],
+    ];
+
+    $replyMethod = new ReflectionMethod($agent, 'bundleReply');
+    $replyMethod->setAccessible(true);
+    $highlightMethod = new ReflectionMethod($agent, 'defaultOfferHighlights');
+    $highlightMethod->setAccessible(true);
+
+    $reply = $replyMethod->invoke($agent, $result, $request, 'en');
+    $highlights = $highlightMethod->invoke($agent, $result, $request);
+
+    expect($reply)->toBe('I found the lowest available offer for IST-AMS, but checked bags and refund flexibility are not included on this fare.')
+        ->and($reply)->not->toContain('can add')
+        ->and($highlights)->toBe([['index' => 0, 'label' => '8 Kg Cabin Bag']]);
+});
+
+test('agent keeps shopping context and searches after the user provides an origin', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        config()->set('services.azure_openai.base_url', null);
+        config()->set('services.azure_openai.api_key', null);
+
+        $first = app(ChatbotAgent::class)->send(
+            'local-shopping-session',
+            'Can you give me the cheapest fares to London this weekend?',
+            'ours',
+            'en',
+        );
+        $second = app(ChatbotAgent::class)->send(
+            'local-shopping-session',
+            'From istanbul and 1 adult only',
+            'ours',
+            'en',
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    expect($first['reply'])->toContain('Where are you flying from')
+        ->and($first['tool_trace'])->toBe([])
+        ->and($second['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles')
+        ->and($second['tool_trace'][0]['result']['flight']['origin'])->toBe('IST')
+        ->and($second['tool_trace'][0]['result']['flight']['destination'])->toBe('LHR')
+        ->and($second['tool_trace'][0]['result']['flight']['date'])->toBe('2026-08-01')
+        ->and($second['tool_trace'][0]['result']['passengers'])->toBe(['adults' => 1, 'children' => 0, 'babies' => 0]);
+});
+
+test('agent understands roundtrip this weekend without asking for airport disambiguation', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        config()->set('services.azure_openai.base_url', null);
+        config()->set('services.azure_openai.api_key', null);
+
+        app(ChatbotAgent::class)->send(
+            'local-roundtrip-session',
+            'Can you give me the cheapest fares to London this weekend?',
+            'ours',
+            'en',
+        );
+        $response = app(ChatbotAgent::class)->send(
+            'local-roundtrip-session',
+            'IST roundtrip this weeekend',
+            'ours',
+            'en',
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    expect($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles')
+        ->and($response['tool_trace'][0]['result']['flight']['origin'])->toBe('IST')
+        ->and($response['tool_trace'][0]['result']['flight']['destination'])->toBe('LHR')
+        ->and($response['tool_trace'][0]['result']['flight']['trip_type'])->toBe('round_trip')
+        ->and($response['tool_trace'][0]['result']['recommended_picks'][0]['offer_ids'])->toHaveCount(2);
+});
+
+test('agent searches direct route and relative date locally', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        config()->set('services.azure_openai.base_url', null);
+        config()->set('services.azure_openai.api_key', null);
+
+        $response = app(ChatbotAgent::class)->send(
+            'local-today-session',
+            'from ist to lhr today',
+            'ours',
+            'en',
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    expect($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles')
+        ->and($response['tool_trace'][0]['result']['flight']['origin'])->toBe('IST')
+        ->and($response['tool_trace'][0]['result']['flight']['destination'])->toBe('LHR')
+        ->and($response['tool_trace'][0]['result']['flight']['date'])->toBe('2026-07-29')
+        ->and($response['tool_trace'][0]['result']['passengers'])->toBe(['adults' => 1, 'children' => 0, 'babies' => 0]);
+});
+
+test('structured bundle requests preserve passenger counts', function () {
+    Carbon::setTestNow('2026-07-29 10:00:00');
+    try {
+        $this->seed(AirlineDemoSeeder::class);
+
+        config()->set('services.azure_openai.base_url', null);
+        config()->set('services.azure_openai.api_key', null);
+
+        $response = app(ChatbotAgent::class)->send(
+            'direct-passenger-session',
+            'Build a custom bundle from IST to LHR on 2026-07-29. Passengers: adults 2, children 1, babies 1. Preferred services: lowest sensible package.',
+            'ours',
+            'en',
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+
+    expect($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles')
+        ->and($response['tool_trace'][0]['result']['passengers'])->toBe(['adults' => 2, 'children' => 1, 'babies' => 1])
+        ->and($response['tool_trace'][0]['result']['seat_passengers'])->toBe(3);
+});
+
 test('agent hides model generated bundle narration after tools run', function () {
     createSellablePricingFixture();
 
@@ -128,12 +322,12 @@ test('agent hides model generated bundle narration after tools run', function ()
 
     $response = app(ChatbotAgent::class)->send(
         'model-bundle-session',
-        'Can you recommend a flight from Istanbul to London?',
+        'Can you add checked bag to my London offer?',
         'ours',
         'en',
     );
 
-    expect($response['reply'])->toBe("Of course, I can add checked bags, here's the offer.")
+    expect($response['reply'])->toBe("I found an offer that includes checked bags, here's the offer.")
         ->and($response['tool_trace'][0]['tool'])->toBe('build_dynamic_bundles');
 });
 
@@ -307,23 +501,25 @@ test('bundle recommendations can use non public package inventory', function () 
     expect($bundle['recommended_picks'][0]['public'])->toBeFalse();
 });
 
-test('bundle recommendations return all custom offer cards', function () {
+test('agent never exposes more than two bundle offer cards', function () {
     Carbon::setTestNow('2026-07-29 10:00:00');
     try {
         $this->seed(AirlineDemoSeeder::class);
 
-        $bundle = app(ChatbotToolbox::class)->dispatch('build_dynamic_bundles', [
-            'origin' => 'IST',
-            'destination' => 'LHR',
-            'date' => '2026-07-29',
-            'service_codes' => ['WIFI'],
-        ], null, false)['result'];
+        config()->set('services.azure_openai.base_url', null);
+        config()->set('services.azure_openai.api_key', null);
+
+        $response = app(ChatbotAgent::class)->send(
+            'direct-two-card-limit-session',
+            'Build a custom bundle from IST to LHR on 2026-07-29. Preferred services: WIFI.',
+            'ours',
+            'en',
+        );
     } finally {
         Carbon::setTestNow();
     }
 
-    expect($bundle['recommended_picks'])->toHaveCount(5)
-        ->and(collect($bundle['recommended_picks'])->pluck('package_code')->unique()->values()->all())->toHaveCount(5);
+    expect($response['tool_trace'][0]['result']['recommended_picks'])->toHaveCount(2);
 });
 
 test('bundle recommendations create custom add on offers for unmet demand', function () {

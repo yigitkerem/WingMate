@@ -4,6 +4,7 @@ use App\Actions\SearchFlights;
 use App\Models\Airport;
 use App\Models\Offer;
 use App\Models\PricingRule;
+use App\Models\ServiceConstraint;
 use App\Models\User;
 use Database\Seeders\AirlineDemoSeeder;
 use Illuminate\Support\Carbon;
@@ -17,7 +18,23 @@ test('flight search page is displayed', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('flight-search')
             ->has('airports', 2)
+            ->where('locale', 'en')
             ->where('results', null),
+        );
+});
+
+test('language can be switched for inertia pages', function () {
+    createSellablePricingFixture();
+
+    $this->from(route('home'))
+        ->post(route('language.update', ['locale' => 'tr']))
+        ->assertRedirect(route('home'));
+
+    $this->get(route('home'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('flight-search')
+            ->where('locale', 'tr'),
         );
 });
 
@@ -46,6 +63,55 @@ test('basic search creates immutable public package offers', function () {
 
     expect(Offer::query()->count())->toBe(1)
         ->and(Offer::query()->first()->total_price)->toEqual('225.00');
+});
+
+test('get search renders results from query parameters', function () {
+    $fixture = createSellablePricingFixture();
+
+    $this->get('/search?'.http_build_query([
+        'origin_airport_id' => $fixture['origin']->id,
+        'destination_airport_id' => $fixture['destination']->id,
+        'trip_type' => 'one_way',
+        'depart_date' => '2026-08-10',
+        'search_mode' => 'basic',
+        'adults' => 1,
+        'children' => 0,
+        'babies' => 0,
+    ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('flight-results')
+            ->where('results.seat_passengers', 1)
+            ->where('results.outbound.0.flight_number', 'TK100')
+            ->where('results.outbound.0.fares.0.class', 'ExtraFly'),
+        );
+});
+
+test('flight search skips fares that violate service constraints', function () {
+    $fixture = createSellablePricingFixture();
+
+    ServiceConstraint::query()->create([
+        'service_id' => $fixture['checkedBag']->id,
+        'type' => 'max_quantity',
+        'parameters' => ['quantity' => 3],
+        'message' => 'At most three checked bags can be selected.',
+    ]);
+
+    $this->get('/search?'.http_build_query([
+        'origin_airport_id' => $fixture['origin']->id,
+        'destination_airport_id' => $fixture['destination']->id,
+        'trip_type' => 'one_way',
+        'depart_date' => '2026-08-10',
+        'search_mode' => 'basic',
+        'adults' => 1,
+        'children' => 0,
+        'babies' => 0,
+    ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('flight-results')
+            ->where('results.outbound', []),
+        );
 });
 
 test('round trip search creates separate outbound and return leg offers', function () {

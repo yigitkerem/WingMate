@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { PurchaseModal } from '@/components/public-flight/purchase-modal';
 import { ResultsPanel } from '@/components/public-flight/results-panel';
 import type {
@@ -19,6 +20,7 @@ import {
     storeLastDestinationAirport,
     totalPassengers,
 } from '@/lib/flight-search';
+import { useTranslation } from '@/lib/i18n';
 import { dashboard, login, register } from '@/routes';
 import type {
     Airport,
@@ -48,6 +50,7 @@ export default function FlightResults({
     customer,
     errors = {},
 }: Props) {
+    const { locale, t } = useTranslation();
     const [form, setForm] = useState<SearchFilters>(() =>
         initializeSearchFilters(filters, airports),
     );
@@ -63,7 +66,7 @@ export default function FlightResults({
     const destination = results?.outbound[0]?.destination;
     const destinationCode = destination?.code;
     const destinationName = cityName(destination?.name, destinationCode);
-    const tripContext = tripSummary(form);
+    const tripContext = tripSummary(form, locale, t);
 
     useEffect(() => {
         storeLastDestinationAirport(form.destination_airport_id);
@@ -85,7 +88,7 @@ export default function FlightResults({
         setRoundTripSelection({});
         setRoundTripStep('outbound');
 
-        router.post(
+        router.get(
             '/search',
             {
                 ...form,
@@ -186,12 +189,13 @@ export default function FlightResults({
 
     return (
         <>
-            <Head title="Search results · Dynamic Pricer" />
+            <Head title={`${t('results.results')} · Dynamic Pricer`} />
             <main className="min-h-screen bg-[#f4f6f8] font-sans text-slate-950">
                 <ResultsHero
                     customer={customer}
                     destinationCode={destinationCode}
                     destinationName={destinationName}
+                    locale={locale}
                     tripContext={tripContext}
                 >
                     <SearchCard
@@ -238,22 +242,26 @@ function ResultsHero({
     customer,
     destinationCode,
     destinationName,
+    locale,
     tripContext,
 }: {
     children: ReactNode;
     customer: CustomerSummary;
     destinationCode?: string;
     destinationName: string;
+    locale: 'en' | 'tr';
     tripContext: string;
 }) {
+    const { t } = useTranslation();
+
     return (
         <section className="border-b border-slate-200 bg-white">
             <ResultsMenuBar customer={customer} />
             <div className="mx-auto grid max-w-6xl gap-5 px-4 py-6 sm:px-6">
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
                     <div className="min-w-0 opacity-100 transition-all duration-500 starting:opacity-0 motion-safe:starting:translate-y-2">
-                        <h1 className="text-2xl font-semibold tracking-normal text-slate-950 sm:text-3xl">
-                            Your trip to {destinationName}
+                        <h1 className="font-display text-2xl font-semibold tracking-normal text-slate-950 sm:text-3xl">
+                            {resultsTitle(destinationName, locale, t)}
                         </h1>
                         <p className="mt-2 max-w-2xl text-sm leading-6 font-medium text-slate-600">
                             {tripContext}
@@ -291,6 +299,8 @@ function DestinationImageCard({
 }
 
 function ResultsMenuBar({ customer }: { customer: CustomerSummary }) {
+    const { t } = useTranslation();
+
     return (
         <div className="relative z-40 border-b border-slate-200 bg-white">
             <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -301,7 +311,7 @@ function ResultsMenuBar({ customer }: { customer: CustomerSummary }) {
                         alt="Turkish Airlines logo"
                     />
                     <span className="min-w-0 leading-none">
-                        <span className="block truncate text-lg font-semibold whitespace-nowrap text-slate-950">
+                        <span className="block truncate font-display text-lg font-semibold whitespace-nowrap text-slate-950">
                             TURKISH AIRLINES
                         </span>
                     </span>
@@ -309,20 +319,21 @@ function ResultsMenuBar({ customer }: { customer: CustomerSummary }) {
 
                 <nav className="hidden items-center gap-5 text-sm font-medium text-slate-600 md:flex">
                     <Link className="hover:text-red-800" href="/">
-                        Book
+                        {t('results.book')}
                     </Link>
                     <a className="hover:text-red-800" href="#results">
-                        Results
+                        {t('results.results')}
                     </a>
                 </nav>
 
                 <div className="flex shrink-0 items-center gap-2">
+                    <LanguageSwitcher />
                     {customer.isAuthenticated ? (
                         <Link
                             href={dashboard()}
                             className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700 transition-colors hover:border-red-200 hover:text-red-800"
                         >
-                            Dashboard
+                            {t('app.dashboard')}
                         </Link>
                     ) : (
                         <>
@@ -330,13 +341,13 @@ function ResultsMenuBar({ customer }: { customer: CustomerSummary }) {
                                 href={register()}
                                 className="hidden h-9 items-center rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700 transition-colors hover:border-red-200 hover:text-red-800 sm:inline-flex"
                             >
-                                Join
+                                {t('public.join')}
                             </Link>
                             <Link
                                 href={login()}
                                 className="inline-flex h-9 items-center rounded-md bg-red-800 px-3 text-sm font-semibold text-white transition-colors hover:bg-red-950"
                             >
-                                Log in
+                                {t('public.login')}
                             </Link>
                         </>
                     )}
@@ -357,20 +368,37 @@ function cityName(name?: string, fallback?: string): string {
         .trim();
 }
 
-function tripSummary(filters: SearchFilters): string {
+function resultsTitle(
+    destinationName: string,
+    locale: 'en' | 'tr',
+    t: (key: 'results.tripTo') => string,
+): string {
+    if (locale === 'tr') {
+        return `${destinationName} seyahatiniz`;
+    }
+
+    return `${t('results.tripTo')} ${destinationName}`;
+}
+
+function tripSummary(
+    filters: SearchFilters,
+    locale: 'en' | 'tr',
+    t: (key: 'search.passenger' | 'search.passengers') => string,
+): string {
     const passengers = totalPassengers(
         filters.adults,
         filters.children,
         filters.babies,
     );
-    const passengerLabel = passengers === 1 ? 'Passenger' : 'Passengers';
+    const passengerLabel =
+        passengers === 1 ? t('search.passenger') : t('search.passengers');
 
-    return `${passengers} ${passengerLabel} · ${tripDateLabel(filters)}`;
+    return `${passengers} ${passengerLabel} · ${tripDateLabel(filters, locale)}`;
 }
 
-function tripDateLabel(filters: SearchFilters): string {
+function tripDateLabel(filters: SearchFilters, locale: 'en' | 'tr'): string {
     if (filters.trip_type !== 'round_trip' || !filters.return_date) {
-        return formatShortDate(filters.depart_date);
+        return formatShortDate(filters.depart_date, locale);
     }
 
     const departureDate = parseTripDate(filters.depart_date);
@@ -380,14 +408,17 @@ function tripDateLabel(filters: SearchFilters): string {
         departureDate.getFullYear() === returnDate.getFullYear() &&
         departureDate.getMonth() === returnDate.getMonth()
     ) {
-        const month = departureDate.toLocaleDateString('en-US', {
-            month: 'short',
-        });
+        const month = departureDate.toLocaleDateString(
+            locale === 'tr' ? 'tr-TR' : 'en-US',
+            {
+                month: 'short',
+            },
+        );
 
         return `${month} ${departureDate.getDate()}-${returnDate.getDate()}`;
     }
 
-    return `${formatShortDate(filters.depart_date)} - ${formatShortDate(filters.return_date)}`;
+    return `${formatShortDate(filters.depart_date, locale)} - ${formatShortDate(filters.return_date, locale)}`;
 }
 
 function parseTripDate(value: string): Date {

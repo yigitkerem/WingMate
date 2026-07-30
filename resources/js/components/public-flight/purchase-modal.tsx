@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { X } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from '@/lib/i18n';
 import type {
     CustomerSummary,
     PurchaseTarget,
@@ -23,6 +24,7 @@ export function PurchaseModal({
     errors,
     onClose,
 }: PurchaseModalProps) {
+    const { t } = useTranslation();
     const [buyer, setBuyer] = useState({
         first_name: customer.firstName,
         last_name: customer.lastName,
@@ -62,14 +64,16 @@ export function PurchaseModal({
             >
                 <div className="flex items-start justify-between gap-4 bg-linear-to-br from-red-950 via-red-800 to-red-600 px-5 py-4 text-white">
                     <div>
-                        <h2 className="text-xl font-black">Buy ticket</h2>
+                        <h2 className="font-display text-xl font-black">
+                            {t('purchase.buyTicket')}
+                        </h2>
                         <p className="mt-1 text-sm text-white/80">
                             {target.flight.flight_number} ·{' '}
-                            {target.flight.origin.code} to{' '}
+                            {target.flight.origin.code} {t('purchase.to')}{' '}
                             {target.flight.destination.code} ·{' '}
                             {target.fare.class_letters}
                             {target.offerIds.length === 2
-                                ? ' · Round trip'
+                                ? ` · ${t('purchase.roundTrip')}`
                                 : ''}
                         </p>
                     </div>
@@ -84,7 +88,7 @@ export function PurchaseModal({
 
                 <div className="grid gap-4 p-5 sm:grid-cols-2">
                     <TextField
-                        label="First name"
+                        label={t('chat.firstName')}
                         value={buyer.first_name}
                         error={errors.first_name}
                         onChange={(value) =>
@@ -95,7 +99,7 @@ export function PurchaseModal({
                         }
                     />
                     <TextField
-                        label="Last name"
+                        label={t('chat.lastName')}
                         value={buyer.last_name}
                         error={errors.last_name}
                         onChange={(value) =>
@@ -106,7 +110,7 @@ export function PurchaseModal({
                         }
                     />
                     <TextField
-                        label="Email"
+                        label={t('chat.email')}
                         value={buyer.email}
                         error={errors.email}
                         className="sm:col-span-2"
@@ -118,7 +122,7 @@ export function PurchaseModal({
                         }
                     />
                     <TextField
-                        label="Passport number"
+                        label={t('chat.passportNumber')}
                         value={buyer.passport_number}
                         error={errors.passport_number}
                         className="sm:col-span-2"
@@ -132,16 +136,20 @@ export function PurchaseModal({
 
                     <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm sm:col-span-2">
                         <SummaryRow
-                            label="Seated passengers"
+                            label={t('purchase.seatedPassengers')}
                             value={String(seatPassengers)}
                         />
                         <SummaryRow
-                            label="Selected offers"
+                            label={t('purchase.selectedOffers')}
                             value={String(target.offerIds.length)}
                         />
                         <div className="mt-3 flex justify-between gap-4 border-t border-slate-200 pt-3 text-base">
-                            <span className="font-semibold">Total</span>
-                            <span className="font-black">${totalPrice}</span>
+                            <span className="font-semibold">
+                                {t('chat.total')}
+                            </span>
+                            <span className="font-display font-black">
+                                ${totalPrice}
+                            </span>
                         </div>
                     </div>
 
@@ -155,7 +163,7 @@ export function PurchaseModal({
                         type="submit"
                         className="h-12 rounded-md bg-red-800 text-sm font-black text-white transition-colors hover:bg-red-900 sm:col-span-2"
                     >
-                        Confirm purchase
+                        {t('chat.confirmPurchase')}
                     </button>
                 </div>
             </form>
@@ -178,7 +186,7 @@ function TextField({
 }) {
     return (
         <label className={`flex flex-col gap-2 ${className}`}>
-            <span className="text-xs font-semibold tracking-normal text-slate-600 uppercase">
+            <span className="font-condensed text-xs font-semibold tracking-normal text-slate-600 uppercase">
                 {label}
             </span>
             <input

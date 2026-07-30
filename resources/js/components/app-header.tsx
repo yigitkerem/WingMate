@@ -3,6 +3,7 @@ import { LayoutGrid, Menu, Plane, Search } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,6 +27,7 @@ import {
 import { UserMenuContent } from '@/components/user-menu-content';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 import { useInitials } from '@/hooks/use-initials';
+import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { dashboard, home } from '@/routes';
 import type { BreadcrumbItem, NavItem } from '@/types';
@@ -34,27 +36,27 @@ type Props = {
     breadcrumbs?: BreadcrumbItem[];
 };
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-    {
-        title: 'Search flights',
-        href: home(),
-        icon: Plane,
-    },
-];
-
 const activeItemStyles =
     'text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100';
 
 export function AppHeader({ breadcrumbs = [] }: Props) {
     const page = usePage();
+    const { t } = useTranslation();
     const { auth } = page.props;
     const getInitials = useInitials();
     const { isCurrentUrl, whenCurrentUrl } = useCurrentUrl();
+    const mainNavItems: NavItem[] = [
+        {
+            title: t('app.dashboard'),
+            href: dashboard(),
+            icon: LayoutGrid,
+        },
+        {
+            title: t('app.searchFlights'),
+            href: home(),
+            icon: Plane,
+        },
+    ];
 
     return (
         <>
@@ -77,7 +79,7 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                 className="flex h-full w-64 flex-col items-stretch justify-between bg-sidebar"
                             >
                                 <SheetTitle className="sr-only">
-                                    Navigation menu
+                                    {t('app.platform')}
                                 </SheetTitle>
                                 <SheetHeader className="flex justify-start text-left">
                                     <AppLogoIcon className="h-6 w-6 fill-current text-black dark:text-white" />
@@ -156,11 +158,15 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                 size="icon"
                                 className="group h-9 w-9"
                             >
-                                <Link href={home()} aria-label="Search flights">
+                                <Link
+                                    href={home()}
+                                    aria-label={t('app.searchFlights')}
+                                >
                                     <Search className="!size-5 opacity-80 group-hover:opacity-100" />
                                 </Link>
                             </Button>
                         </div>
+                        <LanguageSwitcher />
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button

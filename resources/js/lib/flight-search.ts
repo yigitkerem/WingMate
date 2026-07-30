@@ -189,16 +189,16 @@ function readStoredDestinationAirportId(airports: Airport[]): number | null {
     return storedAirportId;
 }
 
-export function formatDisplayDate(value: string): string {
-    return parseDate(value).toLocaleDateString('en-US', {
+export function formatDisplayDate(value: string, locale = 'en'): string {
+    return parseDate(value).toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
     });
 }
 
-export function formatShortDate(value: string): string {
-    return parseDate(value).toLocaleDateString('en-US', {
+export function formatShortDate(value: string, locale = 'en'): string {
+    return parseDate(value).toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US', {
         month: 'short',
         day: 'numeric',
     });

@@ -3,6 +3,7 @@
 namespace App\Pricing;
 
 use App\Models\ServiceConstraint;
+use App\Support\ServiceValue;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
 
@@ -46,18 +47,6 @@ class ServiceConstraintValidator
 
     private function serviceIsEnabled(mixed $value): bool
     {
-        if (is_array($value)) {
-            return ((float) ($value['amount'] ?? 0)) > 0;
-        }
-
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        if (is_numeric($value)) {
-            return ((float) $value) > 0;
-        }
-
-        return $value !== null && $value !== '';
+        return ServiceValue::isEnabled($value);
     }
 }

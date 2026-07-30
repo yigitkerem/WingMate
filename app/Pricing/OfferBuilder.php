@@ -10,17 +10,26 @@ use App\Models\Service;
 use App\Models\ServicePrice;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\ServiceValue;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
 /**
- * @phpstan-type ServiceLine array{service_id: int, code: string, value: mixed, quantity: int, included: bool, price: float, source: string}
+ * @phpstan-type ServiceLine array{service_id: int, code: string, category?: string, default_unit?: string|null, value: mixed, quantity: int, included: bool, price: float, source: string}
  */
 class OfferBuilder
 {
     private const float CHILD_FARE_RATIO = 0.75;
 
     private const float INFANT_FARE_RATIO = 0.10;
+
+    /**
+     * @var array<int, array<int, string>>
+     */
+    private const array EXCLUSIVE_SERVICE_GROUPS = [
+        ['SEAT_STANDARD', 'SEAT_EXIT_ROW'],
+        ['WIFI', 'WIFI_1GB', 'WIFI_5GB', 'WIFI_UNLIMITED'],
+    ];
 
     public function __construct(
         private readonly FareBasisGenerator $fareBasisGenerator,
@@ -37,8 +46,8 @@ class OfferBuilder
 
         $seatPassengers = $adults + $children;
         $bundleServices = $this->bundleServices($baseFare);
-        $customerServices = $this->customerServices($selectedServices, $seatPassengers);
-        $services = [...$bundleServices, ...$customerServices];
+        $customerServices = $this->customerServices($selectedServices, $seatPassengers, $bundleServices);
+        $services = $this->combineServices($bundleServices, $customerServices);
 
         $this->constraintValidator->validate($services);
 
@@ -112,14 +121,16 @@ class OfferBuilder
     {
         return BundleService::query()
             ->where('bundle_id', $baseFare->bundle_id)
-            ->with('service:id,code')
+            ->with('service:id,code,category,default_unit')
             ->get()
             ->mapWithKeys(fn (BundleService $bundleService): array => [
                 $bundleService->service->code => [
                     'service_id' => $bundleService->service_id,
                     'code' => $bundleService->service->code,
+                    'category' => $bundleService->service->category,
+                    'default_unit' => $bundleService->service->default_unit,
                     'value' => $bundleService->included_value,
-                    'quantity' => 1,
+                    'quantity' => $this->serviceQuantity($bundleService->service, $bundleService->included_value, 1),
                     'included' => $bundleService->included,
                     'price' => 0,
                     'source' => 'bundle',
@@ -130,12 +141,13 @@ class OfferBuilder
 
     /**
      * @param  array<int, array{service_code: string, quantity?: int, value?: mixed}>  $selectedServices
+     * @param  array<string, ServiceLine>  $bundleServices
      * @return array<string, ServiceLine>
      */
-    private function customerServices(array $selectedServices, int $seatPassengers): array
+    private function customerServices(array $selectedServices, int $seatPassengers, array $bundleServices): array
     {
         return collect($selectedServices)
-            ->mapWithKeys(function (array $selection) use ($seatPassengers): array {
+            ->mapWithKeys(function (array $selection) use ($seatPassengers, $bundleServices): array {
                 $service = Service::query()->where('code', $selection['service_code'])->first();
 
                 if (! $service instanceof Service) {
@@ -144,23 +156,24 @@ class OfferBuilder
 
                 $quantity = max(1, (int) ($selection['quantity'] ?? 1));
                 $value = $selection['value'] ?? true;
-                $price = ServicePrice::query()
-                    ->where('service_id', $service->id)
-                    ->where('active', true)
-                    ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', now()))
-                    ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', now()))
-                    ->orderByDesc('bundle_id')
-                    ->value('unit_price') ?? 0;
+                $normalizedQuantity = $this->serviceQuantity($service, $value, $quantity);
+                $includedService = $this->includedComparableService($service, $bundleServices);
+
+                if ($this->selectedServiceIsCovered($service, $value, $normalizedQuantity, $includedService)) {
+                    return [];
+                }
 
                 return [
                     $service->code => [
                         'service_id' => $service->id,
                         'code' => $service->code,
+                        'category' => $service->category,
+                        'default_unit' => $service->default_unit,
                         'value' => $value,
-                        'quantity' => $quantity,
+                        'quantity' => $normalizedQuantity,
                         'included' => false,
                         'price' => $this->selectedServiceIsEnabled($value)
-                            ? round((float) $price * $quantity * $seatPassengers, 2)
+                            ? $this->selectedServicePrice($service, $value, $normalizedQuantity, $includedService, $seatPassengers)
                             : 0,
                         'source' => 'customer',
                     ],
@@ -169,21 +182,172 @@ class OfferBuilder
             ->all();
     }
 
+    /**
+     * @param  array<string, ServiceLine>  $bundleServices
+     * @param  array<string, ServiceLine>  $customerServices
+     * @return array<string, ServiceLine>
+     */
+    private function combineServices(array $bundleServices, array $customerServices): array
+    {
+        $services = $bundleServices;
+
+        foreach ($customerServices as $serviceCode => $service) {
+            $existingCustomerService = $this->existingCustomerAlternative($services, $serviceCode);
+
+            if ($existingCustomerService !== null
+                && $this->selectedServiceIsEnabled($existingCustomerService['value'] ?? null)
+                && $this->selectedServiceIsEnabled($service['value'] ?? null)
+                && $this->serviceLineRetailValue($existingCustomerService) >= $this->serviceLineRetailValue($service)) {
+                continue;
+            }
+
+            foreach ($this->exclusiveAlternatives($serviceCode) as $alternativeCode) {
+                unset($services[$alternativeCode]);
+            }
+
+            $services[$serviceCode] = $service;
+        }
+
+        return $services;
+    }
+
+    /**
+     * @param  array<string, ServiceLine>  $services
+     * @return ServiceLine|null
+     */
+    private function existingCustomerAlternative(array $services, string $serviceCode): ?array
+    {
+        return collect($this->exclusiveAlternatives($serviceCode))
+            ->map(fn (string $alternativeCode): ?array => $services[$alternativeCode] ?? null)
+            ->first(fn (?array $service): bool => is_array($service) && ($service['source'] ?? null) === 'customer');
+    }
+
+    /**
+     * @param  array<string, ServiceLine>  $bundleServices
+     * @return ServiceLine|null
+     */
+    private function includedComparableService(Service $service, array $bundleServices): ?array
+    {
+        $group = $this->serviceGroup($service->code);
+
+        return collect($group)
+            ->map(fn (string $serviceCode): ?array => $bundleServices[$serviceCode] ?? null)
+            ->filter(fn (?array $bundleService): bool => is_array($bundleService) && $this->selectedServiceIsEnabled($bundleService['value'] ?? null))
+            ->sortByDesc(fn (array $bundleService): float => $this->serviceLineRetailValue($bundleService))
+            ->first();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function serviceGroup(string $serviceCode): array
+    {
+        foreach (self::EXCLUSIVE_SERVICE_GROUPS as $group) {
+            if (in_array($serviceCode, $group, true)) {
+                return $group;
+            }
+        }
+
+        return [$serviceCode];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function exclusiveAlternatives(string $serviceCode): array
+    {
+        return array_values(array_diff($this->serviceGroup($serviceCode), [$serviceCode]));
+    }
+
+    /**
+     * @param  ServiceLine|null  $includedService
+     */
+    private function selectedServiceIsCovered(Service $service, mixed $value, int $quantity, ?array $includedService): bool
+    {
+        if (! $this->selectedServiceIsEnabled($value) || $includedService === null) {
+            return false;
+        }
+
+        if ($this->pricesByUnit($service)) {
+            return $quantity <= (int) $includedService['quantity'];
+        }
+
+        if (($includedService['code'] ?? null) !== $service->code) {
+            return false;
+        }
+
+        if (is_array($value) || is_array($includedService['value'] ?? null)) {
+            return false;
+        }
+
+        return $this->selectedServiceRetailValue($service, $quantity) <= $this->serviceLineRetailValue($includedService);
+    }
+
+    /**
+     * @param  ServiceLine|null  $includedService
+     */
+    private function selectedServicePrice(Service $service, mixed $value, int $quantity, ?array $includedService, int $seatPassengers): float
+    {
+        $includedValue = $includedService === null ? 0 : $this->serviceLineRetailValue($includedService);
+        $selectedValue = $this->selectedServiceRetailValue($service, $quantity);
+
+        return round(max(0, $selectedValue - $includedValue) * $seatPassengers, 2);
+    }
+
+    private function selectedServiceRetailValue(Service $service, int $quantity): float
+    {
+        $units = $this->pricesByUnit($service) ? $quantity : 1;
+
+        return $this->activeUnitPrice($service) * $units;
+    }
+
+    /**
+     * @param  ServiceLine  $service
+     */
+    private function serviceLineRetailValue(array $service): float
+    {
+        $unitPrice = ServicePrice::query()
+            ->where('service_id', $service['service_id'])
+            ->where('active', true)
+            ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', now()))
+            ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', now()))
+            ->orderByDesc('bundle_id')
+            ->value('unit_price') ?? 0;
+        $units = ($service['category'] ?? null) === 'BAG' && ($service['default_unit'] ?? null) === 'kg'
+            ? (int) $service['quantity']
+            : 1;
+
+        return (float) $unitPrice * $units;
+    }
+
+    private function activeUnitPrice(Service $service): float
+    {
+        return (float) (ServicePrice::query()
+            ->where('service_id', $service->id)
+            ->where('active', true)
+            ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', now()))
+            ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', now()))
+            ->orderByDesc('bundle_id')
+            ->value('unit_price') ?? 0);
+    }
+
+    private function serviceQuantity(Service $service, mixed $value, int $fallback): int
+    {
+        if ($this->pricesByUnit($service)) {
+            return max(0, (int) ServiceValue::amount($value, $fallback));
+        }
+
+        return max(1, $fallback);
+    }
+
+    private function pricesByUnit(Service $service): bool
+    {
+        return $service->category === 'BAG' && $service->default_unit === 'kg';
+    }
+
     private function selectedServiceIsEnabled(mixed $value): bool
     {
-        if (is_array($value)) {
-            return ((float) ($value['amount'] ?? 0)) > 0;
-        }
-
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        if (is_numeric($value)) {
-            return ((float) $value) > 0;
-        }
-
-        return $value !== null && $value !== '';
+        return ServiceValue::isEnabled($value);
     }
 
     /**

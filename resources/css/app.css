@@ -1,3 +1,5 @@
+@import url('https://use.typekit.net/xji7wuv.css');
+
 @import 'tailwindcss';
 
 @import 'tw-animate-css';
@@ -8,7 +10,16 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-    --font-sans: Inter;
+    --font-sans:
+        'museo-sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+        'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display:
+        'museo-sans-display', 'museo-sans', ui-sans-serif, system-ui, sans-serif;
+    --font-condensed:
+        'museo-sans-condensed', 'museo-sans', ui-sans-serif, system-ui,
+        sans-serif;
+    --font-rounded:
+        'museo-sans-rounded', 'museo-sans', ui-sans-serif, system-ui, sans-serif;
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -135,7 +146,7 @@
     }
 
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background font-sans text-foreground;
     }
 
     button:not(:disabled),

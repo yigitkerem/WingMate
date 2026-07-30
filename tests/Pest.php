@@ -89,7 +89,7 @@ function createSellablePricingFixture(array $overrides = []): array
     $checkedBag = Service::query()->firstOrCreate(['code' => 'CHECKED_BAG'], ['name' => 'Checked bag', 'category' => 'BAG', 'value_type' => 'integer', 'default_unit' => 'kg']);
     BundleService::query()->firstOrCreate(['bundle_id' => $bundle->id, 'service_id' => $cabinBag->id], ['included_value' => ['amount' => 8]]);
     BundleService::query()->firstOrCreate(['bundle_id' => $bundle->id, 'service_id' => $checkedBag->id], ['included_value' => ['amount' => 23]]);
-    ServicePrice::query()->firstOrCreate(['service_id' => $checkedBag->id], ['unit_price' => 40, 'max_quantity' => 3]);
+    ServicePrice::query()->firstOrCreate(['service_id' => $checkedBag->id], ['unit_price' => 4, 'max_quantity' => 50]);
     ServiceConstraint::query()->firstOrCreate(['service_id' => $checkedBag->id, 'type' => 'requires'], ['related_service_id' => $cabinBag->id]);
     $departureAt = Carbon::parse($overrides['departure_at'] ?? '2026-08-10 09:00');
     $flight = Flight::query()->create([

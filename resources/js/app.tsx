@@ -1,8 +1,10 @@
 import { createInertiaApp } from '@inertiajs/react';
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { Root } from 'react-dom/client';
 import { WingoChat } from '@/components/public-flight/wingo-chat';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -10,6 +12,12 @@ import { initializeTheme } from '@/hooks/use-appearance';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+
+declare global {
+    interface Window {
+        dynamicPricerInertiaRoot?: Root;
+    }
+}
 
 if (typeof window !== 'undefined') {
     window.Pusher = Pusher;
@@ -42,14 +50,22 @@ createInertiaApp({
                 return [PageShell, AppLayout];
         }
     },
-    strictMode: true,
-    withApp(app) {
-        return (
-            <TooltipProvider delayDuration={0}>
-                {app}
-                <Toaster />
-            </TooltipProvider>
+    setup({ el, App, props }) {
+        if (!el) {
+            return;
+        }
+
+        const app = (
+            <StrictMode>
+                <TooltipProvider delayDuration={0}>
+                    <App {...props} />
+                    <Toaster />
+                </TooltipProvider>
+            </StrictMode>
         );
+
+        window.dynamicPricerInertiaRoot ??= createRoot(el);
+        window.dynamicPricerInertiaRoot.render(app);
     },
     progress: {
         color: '#4B5563',
