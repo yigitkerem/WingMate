@@ -12,9 +12,9 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { useTranslation } from '@/lib/i18n';
 import { dashboard, home } from '@/routes';
 import type { NavItem } from '@/types';
-import { useTranslation } from '@/lib/i18n';
 
 export function AppSidebar() {
     const { t } = useTranslation();
