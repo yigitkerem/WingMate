@@ -1,5 +1,9 @@
 # WingMate ✈️
 
+<p align="center">
+  <img src="public/assets/case_hero.png" alt="WingMate airline experience" width="100%" />
+</p>
+
 **WingMate is a dynamic airline offer and pricing platform built around revenue management, inventory-aware pricing, flexible bundles, and personalized passenger offers.**
 
 The project explores how traditional fixed fare packages can evolve into a more dynamic offer experience where availability, pricing rules, passenger context, and ancillary services are evaluated together before an offer is generated.
@@ -105,8 +109,17 @@ For environment configuration, copy `.env.example` to `.env` if it is not create
 
 A detailed usage guide covering admin setup, pricing rules, service constraints, public search, checkout, imports, and troubleshooting is available in [`USER_GUIDE.md`](./USER_GUIDE.md).
 
-## Project Focus
+## Project Context
 
-WingMate is not only a booking interface. The core focus is the **decision layer behind airline offers** — how inventory, pricing, passenger context, bundle design, and business rules can be combined to generate more relevant and commercially meaningful offers.
+WingMate was developed collaboratively during an internship project focused on **airline revenue management, dynamic pricing, bundling, and offer management**.
 
-The project was developed as a collaborative learning and internship experience around airline revenue management, dynamic pricing, business analysis, and offer management.
+The project combines both business and technical perspectives: understanding airline pricing and inventory scenarios, translating them into requirements and business rules, and implementing those rules in a working product experience.
+
+The goal was not only to build a booking interface, but to explore the **decision layer behind an airline offer** — how inventory, passenger context, ancillary services, bundle design, and pricing rules can work together to produce a more relevant offer.
+
+## Contributors
+
+- [@yigitkerem](https://github.com/yigitkerem) — repository owner and project contributor
+- [@fazgerr](https://github.com/fazgerr) — business analysis, pricing/revenue-management scenarios, requirements, product logic, and project documentation
+
+> This project was created as a collaborative internship experience. Contributions span product thinking, business analysis, airline pricing logic, software implementation, testing, and documentation.
