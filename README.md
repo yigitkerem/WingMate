@@ -1,49 +1,60 @@
-# WingMate ✈️
+<div align="center">
+
+# ✈️ WingMate
+
+### Dynamic Airline Offer & Pricing Engine
+
+**Revenue Management · Inventory-Aware Pricing · Dynamic Bundling · Personalized Offers**
+
+![Laravel](https://img.shields.io/badge/Laravel-13-FF2D20?logo=laravel&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
+
+</div>
 
 <p align="center">
   <img src="public/assets/case_hero.png" alt="WingMate airline experience" width="100%" />
 </p>
 
-**WingMate is a dynamic airline offer and pricing platform built around revenue management, inventory-aware pricing, flexible bundles, and personalized passenger offers.**
+WingMate explores how a traditional airline booking flow can evolve into a more dynamic offer experience. Instead of treating fares, inventory, services and passenger context as separate pieces, the platform combines them through an offer engine that can generate more relevant and commercially meaningful offers.
 
-The project explores how traditional fixed fare packages can evolve into a more dynamic offer experience where availability, pricing rules, passenger context, and ancillary services are evaluated together before an offer is generated.
+> Built collaboratively as an internship project around **airline revenue management, dynamic pricing, business analysis and offer management**.
 
-> Built collaboratively as an internship project to model real airline pricing, bundling, inventory, and offer-management scenarios in a working web application.
+---
 
-## What WingMate Does
+## ✨ At a Glance
 
-WingMate brings the main pieces of an airline offer flow into one system:
+| | Capability | What it does |
+|---|---|---|
+| 🎯 | **Dynamic Pricing** | Applies route, trip, loyalty, travel-history and departure-day rules to offers |
+| 🧳 | **Bundles & Ancillaries** | Builds configurable packages from baggage, seats, lounge, Wi-Fi, meals and more |
+| 🪑 | **Inventory-Aware Offers** | Connects booking classes, base fares and seat availability before checkout |
+| 🧠 | **Wingo Recommendations** | Matches passenger needs with valid bundle options using the same pricing logic |
+| 🔒 | **Safe Checkout** | Validates expiring offers, locks inventory and prevents overselling |
+| ⚙️ | **Admin Control** | Manages flights, fares, services, constraints, pricing rules, inventory and orders |
 
-- **Flight & inventory management** — routes, dates, booking classes, seat availability, and base fares
-- **Dynamic bundles** — configurable fare packages and included services
-- **Ancillary services** — baggage, seat selection, lounge, fast track, Wi-Fi, meals, change/refund rights, and more
-- **Pricing rules** — route, trip type, loyalty, travel history, departure day, and similar conditions can influence the final offer
-- **Offer engine** — generates immutable, inventory-aware offers for passengers
-- **Custom bundle recommendations** — passengers can express what they need and receive valid package recommendations
-- **Checkout & ticketing flow** — offer validation, inventory locking, order creation, and ticket issuance
-- **Admin panel** — manage flights, fares, bundles, services, constraints, pricing rules, inventory, imports, and orders
+---
 
-## Offer Flow
+## 🧭 How the Offer Engine Works
 
-```text
-Flight & Inventory
-        ↓
-Fare / Booking Class
-        ↓
-Services & Bundles
-        ↓
-Pricing Rules
-        ↓
-Offer Engine
-        ↓
-Personalized Offer
-        ↓
-Checkout & Order
+```mermaid
+flowchart LR
+    A[Flight & Inventory] --> B[Fare / Booking Class]
+    B --> C[Services & Bundles]
+    C --> D[Pricing Rules]
+    D --> E[Offer Engine]
+    E --> F[Personalized Offer]
+    F --> G[Checkout & Order]
 ```
 
-## Example Pricing Logic
+The core idea is simple: **an offer is the result of multiple business decisions working together**, not just a static fare lookup.
 
-The rule engine can evaluate conditions such as:
+---
+
+## 💸 Pricing Logic
+
+Pricing rules are evaluated by priority and can react to different parts of the offer context.
 
 ```text
 route == "IST-LHR"
@@ -53,48 +64,75 @@ loyalty_tier == "elite"
 departure_day == "fri"
 ```
 
-and apply actions such as:
+Rules can then apply actions such as:
 
-- percentage discount or surcharge
-- fixed discount
-- fixed fare
+- percentage discounts or surcharges
+- fixed discounts
+- fixed fares
 - service inclusion
 
-This makes it possible to model scenarios such as weekend uplifts, route-based pricing, loyalty benefits, repeat-route discounts, and round-trip incentives.
+This allows the system to model scenarios such as **weekend uplifts, route-based pricing, repeat-route incentives, loyalty benefits and round-trip discounts**.
 
-## Service Constraints
+---
 
-Custom offers can also respect service relationships such as:
+## 🧩 Flexible Services & Constraints
 
-- `requires` — one service requires another
+Services are treated as reusable building blocks rather than hard-coded package fields. A bundle can include combinations of baggage, seat selection, change/refund rights, lounge access, priority boarding, Wi-Fi, meals and other services.
+
+To keep custom offers valid, WingMate supports relationships such as:
+
+- `requires` — one service depends on another
 - `conflicts` — two services cannot be selected together
 - `min_quantity`
 - `max_quantity`
 
-This helps prevent invalid or unrealistic bundle combinations.
+---
 
-## Tech Stack
+## 🪽 Wingo Custom Bundle Builder
 
-**Backend**
-- Laravel 13
-- PHP 8.3+
-- Filament 5
-- Laravel Fortify / Reverb
+<img src="public/assets/wingo-face.png" alt="Wingo" width="90" align="right" />
 
-**Frontend**
-- React 19
-- TypeScript
-- Inertia.js
-- Tailwind CSS 4
-- Vite
+Wingo lets passengers describe what they actually need — for example baggage, seat selection, change rights or lounge access — and recommends valid packages using the same pricing rules and constraints as the main offer engine.
 
-**Quality & Testing**
-- Pest
-- Larastan / PHPStan
-- ESLint
-- Prettier
+This turns bundle selection from a static package comparison into a more personalized decision experience.
 
-## Getting Started
+<br clear="right"/>
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technologies |
+|---|---|
+| **Backend** | Laravel 13, PHP 8.3+, Filament 5, Laravel Fortify, Reverb |
+| **Frontend** | React 19, TypeScript, Inertia.js, Tailwind CSS 4, Vite |
+| **Quality** | Pest, Larastan / PHPStan, ESLint, Prettier |
+
+---
+
+## 📌 Project Context
+
+WingMate was developed collaboratively during an internship project focused on **airline revenue management, dynamic pricing, bundling and offer management**.
+
+The work combined business and technical perspectives: understanding airline pricing and inventory scenarios, translating them into requirements and business rules, and turning those rules into a working product experience.
+
+The project is therefore not only a booking interface. Its main focus is the **decision layer behind an airline offer** — how inventory, passenger context, ancillary services, bundle design and pricing rules can work together before a customer reaches checkout.
+
+---
+
+## 👥 Contributors
+
+- [@yigitkerem](https://github.com/yigitkerem) — repository owner and project contributor
+- [@fazgerr](https://github.com/fazgerr) — business analysis, pricing/revenue-management scenarios, requirements, product logic and project documentation
+
+> Contributions across the project include product thinking, business analysis, airline pricing logic, software implementation, testing and documentation.
+
+---
+
+## 🚀 Run Locally
+
+<details>
+<summary><strong>Show setup steps</strong></summary>
 
 ```bash
 git clone https://github.com/yigitkerem/WingMate.git
@@ -103,23 +141,12 @@ composer setup
 composer dev
 ```
 
-For environment configuration, copy `.env.example` to `.env` if it is not created automatically and configure the required database and service values.
+If `.env` is not created automatically, copy `.env.example` to `.env` and configure the required database and service values.
 
-## Documentation
+</details>
 
-A detailed usage guide covering admin setup, pricing rules, service constraints, public search, checkout, imports, and troubleshooting is available in [`USER_GUIDE.md`](./USER_GUIDE.md).
+---
 
-## Project Context
+## 📚 Documentation
 
-WingMate was developed collaboratively during an internship project focused on **airline revenue management, dynamic pricing, bundling, and offer management**.
-
-The project combines both business and technical perspectives: understanding airline pricing and inventory scenarios, translating them into requirements and business rules, and implementing those rules in a working product experience.
-
-The goal was not only to build a booking interface, but to explore the **decision layer behind an airline offer** — how inventory, passenger context, ancillary services, bundle design, and pricing rules can work together to produce a more relevant offer.
-
-## Contributors
-
-- [@yigitkerem](https://github.com/yigitkerem) — repository owner and project contributor
-- [@fazgerr](https://github.com/fazgerr) — business analysis, pricing/revenue-management scenarios, requirements, product logic, and project documentation
-
-> This project was created as a collaborative internship experience. Contributions span product thinking, business analysis, airline pricing logic, software implementation, testing, and documentation.
+For the detailed admin setup, pricing rules, service constraints, public search, checkout, imports and troubleshooting flow, see [`USER_GUIDE.md`](./USER_GUIDE.md).
